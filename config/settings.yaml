@@ -1,0 +1,42 @@
+# Configuration settings for RAGAS evaluation project
+
+# General settings
+project_name: "RAGAS Evaluator"
+version: "1.0.0"
+description: "Advanced evaluation framework for RAG systems"
+
+# LLM settings
+llm:
+  model: "llama3.2"
+  temperature: 0.1
+  num_predict: 512
+  num_ctx: 8192
+  num_thread: 2
+  repeat_penalty: 1.05
+  top_k: 20
+  top_p: 0.9
+  timeout: 60
+
+# Embeddings settings
+embeddings:
+  model: "nomic-embed-text"
+  num_thread: 2
+  num_ctx: 2048
+  timeout: 30
+
+# Dataset validation settings
+dataset_validation:
+  max_contexts: 5
+  min_context_length: 20
+  default_question: "What information does this document provide?"
+  default_ground_truth: "Ground truth not provided."
+
+# Retry settings
+retry:
+  max_retries: 3
+  backoff_factor: 0.5
+
+# Logging settings
+logging:
+  level: "INFO"
+  log_file: "ragas_evaluator.log"

@@ -1,0 +1,50 @@
+metrics:
+  - name: "faithfulness"
+    description: "Measures the faithfulness of the generated answers to the provided context."
+    threshold: 0.7
+    weight: 1.0
+
+  - name: "answer_relevancy"
+    description: "Evaluates how relevant the generated answer is to the question asked."
+    threshold: 0.75
+    weight: 1.0
+
+  - name: "context_precision"
+    description: "Assesses the precision of the contexts used in generating the answers."
+    threshold: 0.65
+    weight: 0.8
+
+  - name: "context_recall"
+    description: "Measures the recall of relevant contexts in the evaluation."
+    threshold: 0.7
+    weight: 0.8
+
+  - name: "answer_correctness"
+    description: "Checks the correctness of the generated answers against ground truth."
+    threshold: 0.8
+    weight: 1.0
+
+  - name: "answer_similarity"
+    description: "Evaluates the similarity between the generated answer and the expected answer."
+    threshold: 0.7
+    weight: 0.9
+
+  - name: "context_entity_recall"
+    description: "Measures the recall of entities present in the context."
+    threshold: 0.6
+    weight: 0.7
+
+  - name: "coherence"
+    description: "Assesses the coherence of the generated answers."
+    threshold: 0.75
+    weight: 0.8
+
+  - name: "fluency"
+    description: "Evaluates the fluency of the generated text."
+    threshold: 0.7
+    weight: 0.8
+
+  - name: "conciseness"
+    description: "Measures the conciseness of the generated answers."
+    threshold: 0.65
+    weight: 0.7
