@@ -508,35 +508,7 @@ class RAGEvaluator:
 
                             if result.scores and len(result.scores) > 0:
                                 raw_output = result.scores[0]
-                                print(f"  Raw Output: {raw_output}")  # DEBUG
-
-                                # Rimuovi questo blocco
-                                # parsed_output = extract_json(str(raw_output))
-                                # if parsed_output:
-                                #     # DEBUG
-                                #     print(f"  Parsed Output: {parsed_output}")
-                                #     score_key = metric_info.get(
-                                #         'key', metric_name)
-
-                                #     if score_key in parsed_output:
-                                #         score = parsed_output[score_key]
-                                #         if not np.isnan(score):
-                                #             ragas_results[metric_name] = score
-                                #             status = self.get_status_emoji(
-                                #                 score)
-                                #             print(
-                                #                 f"  {status} {metric_name}: {score:.4f} ({elapsed:.1f}s)")
-                                #         else:
-                                #             print(
-                                #                 f"  ⚠️ {metric_name}: Score NaN")
-                                #     else:
-                                #         print(
-                                #             f"  ⚠️ {metric_name}: Chiave '{score_key}' non trovata")
-                                # else:
-                                #     print(
-                                #         f"  ❌ {metric_name}: Nessun JSON valido trovato")
-
-                                # Sostituisci con questo blocco
+                                print(f"  Raw Output: {raw_output}")  #
                                 score_key = metric_info.get('key', metric_name)
                                 if score_key in raw_output:
                                     score = raw_output[score_key]
@@ -724,6 +696,149 @@ class RAGEvaluator:
             print(f"  • {name}: {value}")
 
         return custom_results
+
+    def get_comprehensive_results_string(self, ragas_results, custom_results):
+        """Restituisce una stringa formattata con i risultati della valutazione RAG"""
+
+        result_lines = []
+        result_lines.append("=" * 80)
+        result_lines.append("📊 RISULTATI VALUTAZIONE RAG COMPLETA")
+        result_lines.append("=" * 80)
+
+        # DEBUG: Verifica input
+        result_lines.append(f"🔍 DEBUG display_comprehensive_results:")
+        result_lines.append(f"  RAGAS results type: {type(ragas_results)}")
+        result_lines.append(f"  RAGAS results: {ragas_results}")
+        result_lines.append(f"  Custom results type: {type(custom_results)}")
+        result_lines.append(f"  Custom results: {custom_results}")
+        result_lines.append(
+            f"  Custom results length: {len(custom_results) if custom_results else 0}")
+
+        # Aggiungi questo blocco per debug RAGAS
+        if ragas_results:
+            for metric, value in ragas_results.items():
+                result_lines.append(
+                    f"  RAGAS Metric: {metric}, Value: {value}, Type: {type(value)}")
+        else:
+            result_lines.append("  Nessun risultato RAGAS")
+
+        # Aggiungi questo blocco per debug Custom
+        if custom_results:
+            for metric, value in custom_results.items():
+                result_lines.append(
+                    f"  Custom Metric: {metric}, Value: {value}, Type: {type(value)}")
+        else:
+            result_lines.append("  Nessun risultato Custom")
+
+        # Categorizza metriche RAGAS
+        metric_categories = {
+            "🎯 Core RAG Metrics": ["faithfulness", "answer_relevancy", "context_precision", "context_recall"],
+            "📝 Answer Quality": ["answer_correctness", "answer_similarity"],
+            "📄 Context Analysis": ["context_entity_recall"],
+            "🗣️ Language Quality": ["coherence", "fluency", "conciseness"],
+            "🛡️ Safety & Ethics": ["harmfulness", "maliciousness"],
+            "🔬 Specialized": ["summarization_score", "aspect_critique"]
+        }
+
+        # Mostra metriche RAGAS per categoria
+        ragas_scores = []
+        zero_scores = []
+
+        result_lines.append(f"\n📊 SEZIONE RAGAS METRICS:")
+        if ragas_results and len(ragas_results) > 0:
+            for category_name, metrics in metric_categories.items():
+                category_metrics = {k: v for k,
+                                    v in ragas_results.items() if k in metrics}
+                if category_metrics:
+                    result_lines.append(f"\n{category_name}:")
+                    for metric, value in category_metrics.items():
+                        if not np.isnan(value):
+                            status = self.get_status_emoji(value)
+                            result_lines.append(
+                                f"  {status} {metric:20}: {value:.4f}")
+                            ragas_scores.append(value)
+                            if value == 0:
+                                zero_scores.append(metric)
+                        else:
+                            result_lines.append(f"  🔶 {metric:20}: NaN")
+        else:
+            result_lines.append("  ❌ Nessuna metrica RAGAS disponibile")
+
+        # Mostra metriche custom con debug esteso
+        result_lines.append(f"\n🔧 SEZIONE CUSTOM METRICS:")
+        result_lines.append(f"📋 Debug custom_results:")
+        result_lines.append(f"  Type: {type(custom_results)}")
+        result_lines.append(f"  Content: {custom_results}")
+        result_lines.append(f"  Is dict: {isinstance(custom_results, dict)}")
+        result_lines.append(
+            f"  Length: {len(custom_results) if custom_results else 0}")
+
+        custom_scores = []
+        if custom_results and isinstance(custom_results, dict) and len(custom_results) > 0:
+            result_lines.append(
+                f"✅ Mostrando {len(custom_results)} metriche custom:")
+            for metric, value in custom_results.items():
+                result_lines.append(
+                    f"  Processing: {metric} = {value} (type: {type(value)})")
+                try:
+                    if isinstance(value, (int, float)) and not np.isnan(value):
+                        status = self.get_status_emoji(value)
+                        result_lines.append(
+                            f"  {status} {metric:25}: {value:.4f}")
+                        custom_scores.append(value)
+                    else:
+                        result_lines.append(
+                            f"  ⚠️ {metric:25}: {value} (invalid)")
+                except Exception as e:
+                    result_lines.append(
+                        f"  ❌ Errore processando {metric}: {e}")
+        else:
+            result_lines.append("  ❌ Nessuna metrica custom disponibile")
+            result_lines.append(f"     custom_results: {custom_results}")
+
+        # Statistiche globali
+        all_scores = ragas_scores + custom_scores
+
+        result_lines.append(f"\n📈 STATISTICHE GLOBALI:")
+        result_lines.append(f"  📊 RAGAS scores: {len(ragas_scores)}")
+        result_lines.append(f"  🔧 Custom scores: {len(custom_scores)}")
+        result_lines.append(f"  📋 Total scores: {len(all_scores)}")
+
+        if all_scores:
+            avg_score = np.mean(all_scores)
+            median_score = np.median(all_scores)
+            max_score = np.max(all_scores)
+            min_score = np.min(all_scores)
+
+            result_lines.append(f"  📊 Score medio:      {avg_score:.4f}")
+            result_lines.append(f"  🎯 Score mediano:    {median_score:.4f}")
+            result_lines.append(f"  🏆 Score massimo:    {max_score:.4f}")
+            result_lines.append(f"  ⚠️ Score minimo:     {min_score:.4f}")
+
+            # Rating globale
+            if avg_score >= 0.8:
+                rating = "🏆 ECCELLENTE"
+            elif avg_score >= 0.6:
+                rating = "✅ BUONO"
+            elif avg_score >= 0.4:
+                rating = "⚠️ DISCRETO"
+            else:
+                rating = "❌ NECESSITA MIGLIORAMENTI"
+
+            result_lines.append(f"  🎖️ Rating globale:   {rating}")
+
+            # Aree di miglioramento
+            if zero_scores:
+                result_lines.append(f"\n🔧 AREE DI MIGLIORAMENTO:")
+                for metric in zero_scores:
+                    result_lines.append(f"  ❌ {metric}")
+        else:
+            result_lines.append(
+                "  ❌ Nessun punteggio disponibile per le statistiche")
+
+        result_lines.append("=" * 80)
+
+        return "\n".join(result_lines)
 
     def display_comprehensive_results(self, ragas_results, custom_results):
         """Visualizza risultati con debug esteso"""
