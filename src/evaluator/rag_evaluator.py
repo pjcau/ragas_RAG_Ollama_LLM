@@ -421,9 +421,48 @@ class RAGEvaluator:
 
         return working_metrics, failed_metrics
 
+    def normalize_score(self, score, metric_name):
+        """Normalizza i punteggi tra 0 e 1 basandosi sul tipo di metrica"""
+        if score is None or np.isnan(score):
+            return 0.0
+
+        # La maggior parte delle metriche RAGAS sono già tra 0 e 1
+        # Ma alcune potrebbero avere range diversi
+        if metric_name in ['response_length', 'context_count', 'query_length']:
+            # Per metriche custom di lunghezza, normalizza usando scaling logaritmico
+            if score <= 0:
+                return 0.0
+            # Normalizzazione logaritmica per lunghezze
+            if metric_name == 'response_length':
+                # Normalizza la lunghezza della risposta (0-2000 caratteri)
+                normalized = min(1.0, score / 2000.0)
+            elif metric_name == 'context_count':
+                # Normalizza il numero di contesti (0-10 contesti)
+                normalized = min(1.0, score / 10.0)
+            elif metric_name == 'query_length':
+                # Normalizza la lunghezza della query (0-500 caratteri)
+                normalized = min(1.0, score / 500.0)
+            else:
+                normalized = min(1.0, np.log10(score + 1) / 3.0)
+            return max(0.0, normalized)
+        elif metric_name in ['faithfulness', 'answer_relevancy', 'context_precision', 'context_recall',
+                             'answer_correctness', 'answer_similarity', 'context_entity_recall',
+                             'coherence', 'fluency', 'conciseness']:
+            # Metriche RAGAS sono già 0-1, ma assicuriamoci
+            return max(0.0, min(1.0, float(score)))
+        else:
+            # Per altre metriche custom, usa normalizzazione generica
+            if score < 0:
+                return 0.0
+            elif score > 1:
+                # Se > 1, normalizza dividendo per il valore stesso (scala relativa)
+                return min(1.0, score / max(10.0, score))
+            else:
+                return float(score)
+
     def evaluate_all_working_metrics(self, query, answer, contexts, isTest=False):
-        """Valuta metriche funzionanti con filtro automatico per production"""
-        print("\n🚀 VALUTAZIONE CON METRICHE FUNZIONANTI:")
+        """Valuta metriche funzionanti con normalizzazione automatica"""
+        print("\n🚀 VALUTAZIONE CON METRICHE FUNZIONANTI (NORMALIZZATE):")
         print("=" * 60)
 
         # Prepara il dataset PRIMA di testare le metriche
@@ -449,7 +488,22 @@ class RAGEvaluator:
         print("\n🔧 Calcolando metriche custom...")
         custom_results = self.calculate_custom_metrics(
             query, answer, contexts_list)
-        print(f"📊 Custom results ottenuti: {len(custom_results)} metriche")
+
+        # Normalizza metriche custom
+        normalized_custom = {}
+        for metric_name, score in custom_results.items():
+            if isinstance(score, (int, float)):
+                original_score = score
+                normalized_score = self.normalize_score(score, metric_name)
+                normalized_custom[metric_name] = normalized_score
+                print(
+                    f"  📊 {metric_name}: {original_score} → {normalized_score:.4f} (normalizzato)")
+            else:
+                normalized_custom[metric_name] = score
+                print(f"  📊 {metric_name}: {score} (non numerico)")
+
+        print(
+            f"📊 Custom results normalizzati: {len(normalized_custom)} metriche")
 
         # Inizializza risultati RAGAS vuoti
         ragas_results = {}
@@ -462,7 +516,7 @@ class RAGEvaluator:
 
                 if not working_metrics:
                     print("❌ Nessuna metrica RAGAS funzionante trovata!")
-                    print("✅ Ma abbiamo comunque le metriche custom!")
+                    print("✅ Ma abbiamo comunque le metriche custom normalizzate!")
                 else:
                     self.working_metrics_cache = working_metrics
                     print(
@@ -474,26 +528,294 @@ class RAGEvaluator:
 
             # Valuta con cache esistente
             if self.working_metrics_cache and len(self.working_metrics_cache) > 0:
-                ragas_results = self._evaluate_cached_metrics(
+                raw_ragas = self._evaluate_cached_metrics(
                     query, answer, contexts_list)
+                # Normalizza risultati RAGAS
+                print("\n🔧 Normalizzando metriche RAGAS...")
+                for metric_name, score in raw_ragas.items():
+                    original_score = score
+                    normalized_score = self.normalize_score(score, metric_name)
+                    ragas_results[metric_name] = normalized_score
+                    print(
+                        f"  🎯 {metric_name}: {original_score:.4f} → {normalized_score:.4f} (normalizzato)")
         else:
             # MODALITÀ PRODUCTION: Valuta tutte le metriche e filtra automaticamente
             print("🎯 MODALITÀ PRODUCTION - Valutazione e filtro automatico...")
-            ragas_results = self._evaluate_and_filter_metrics(
+            raw_ragas = self._evaluate_and_filter_metrics(
                 query, answer, contexts_list)
+            # Normalizza risultati RAGAS
+            print("\n🔧 Normalizzando metriche RAGAS...")
+            for metric_name, score in raw_ragas.items():
+                original_score = score
+                normalized_score = self.normalize_score(score, metric_name)
+                ragas_results[metric_name] = normalized_score
+                print(
+                    f"  🎯 {metric_name}: {original_score:.4f} → {normalized_score:.4f} (normalizzato)")
 
         # Statistiche finali
         total_ragas = len(ragas_results)
-        total_custom = len(custom_results)
+        total_custom = len(normalized_custom)
 
-        print(f"\n📈 RISULTATI FINALI:")
+        print(f"\n📈 RISULTATI FINALI NORMALIZZATI:")
         print(f"✅ RAGAS metriche valutate: {total_ragas}")
         print(f"✅ Custom metriche calcolate: {total_custom}")
         print(f"📊 Totale metriche: {total_ragas + total_custom}")
 
         return {
             'ragas': ragas_results,
-            'custom': custom_results
+            'custom': normalized_custom
+        }
+
+    def get_comprehensive_results_string(self, results):
+        """Genera una stringa completa con tutti i risultati di valutazione normalizzati"""
+
+        if not results or (not results.get('ragas') and not results.get('custom')):
+            return "❌ Nessun risultato disponibile per la formattazione"
+
+        output = []
+        output.append("=" * 80)
+        output.append(
+            "📊 REPORT COMPLETO VALUTAZIONE RAG (PUNTEGGI NORMALIZZATI 0-1)")
+        output.append("=" * 80)
+
+        # Sezione RAGAS
+        ragas_results = results.get('ragas', {})
+        if ragas_results:
+            output.append("\n🔍 METRICHE RAGAS (NORMALIZZATE):")
+            output.append("-" * 40)
+
+            ragas_scores = []
+            for metric_name, score in ragas_results.items():
+                status = self.get_status_emoji(score)
+                output.append(
+                    f"  {status} {metric_name.capitalize()}: {score:.4f}")
+                ragas_scores.append(score)
+
+            if ragas_scores:
+                ragas_avg = np.mean(ragas_scores)
+                ragas_std = np.std(ragas_scores)
+                ragas_min = min(ragas_scores)
+                ragas_max = max(ragas_scores)
+
+                output.append(f"\n📈 STATISTICHE RAGAS:")
+                output.append(f"  🎯 Media: {ragas_avg:.4f}")
+                output.append(f"  📊 Deviazione std: {ragas_std:.4f}")
+                output.append(f"  ⬇️ Minimo: {ragas_min:.4f}")
+                output.append(f"  ⬆️ Massimo: {ragas_max:.4f}")
+                output.append(f"  📋 Totale metriche: {len(ragas_scores)}")
+        else:
+            output.append("\n🔍 METRICHE RAGAS:")
+            output.append("-" * 40)
+            output.append("  ⚠️ Nessuna metrica RAGAS disponibile")
+
+        # Sezione Custom
+        custom_results = results.get('custom', {})
+        if custom_results:
+            output.append("\n🛠️ METRICHE CUSTOM (NORMALIZZATE):")
+            output.append("-" * 40)
+
+            custom_scores = []
+            for metric_name, score in custom_results.items():
+                if isinstance(score, (int, float)):
+                    status = self.get_status_emoji(score)
+                    output.append(
+                        f"  {status} {metric_name.replace('_', ' ').title()}: {score:.4f}")
+                    custom_scores.append(score)
+                else:
+                    output.append(
+                        f"  📊 {metric_name.replace('_', ' ').title()}: {score}")
+
+            if custom_scores:
+                custom_avg = np.mean(custom_scores)
+                custom_std = np.std(custom_scores)
+                custom_min = min(custom_scores)
+                custom_max = max(custom_scores)
+
+                output.append(f"\n📈 STATISTICHE CUSTOM:")
+                output.append(f"  🎯 Media: {custom_avg:.4f}")
+                output.append(f"  📊 Deviazione std: {custom_std:.4f}")
+                output.append(f"  ⬇️ Minimo: {custom_min:.4f}")
+                output.append(f"  ⬆️ Massimo: {custom_max:.4f}")
+                output.append(f"  📋 Totale metriche: {len(custom_scores)}")
+        else:
+            output.append("\n🛠️ METRICHE CUSTOM:")
+            output.append("-" * 40)
+            output.append("  ⚠️ Nessuna metrica custom disponibile")
+
+        # Sezione riassunto globale
+        all_scores = []
+        ragas_scores = [score for score in ragas_results.values(
+        ) if isinstance(score, (int, float))]
+        custom_scores = [score for score in custom_results.values(
+        ) if isinstance(score, (int, float))]
+
+        all_scores.extend(ragas_scores)
+        all_scores.extend(custom_scores)
+
+        if all_scores:
+            overall_avg = np.mean(all_scores)
+            overall_std = np.std(all_scores)
+            overall_min = min(all_scores)
+            overall_max = max(all_scores)
+
+            output.append("\n🌟 RIASSUNTO GLOBALE (NORMALIZZATO):")
+            output.append("-" * 40)
+            output.append(f"  🎯 Media generale: {overall_avg:.4f}")
+            output.append(f"  📊 Deviazione std generale: {overall_std:.4f}")
+            output.append(f"  ⬇️ Punteggio minimo: {overall_min:.4f}")
+            output.append(f"  ⬆️ Punteggio massimo: {overall_max:.4f}")
+            output.append(f"  📋 Totale metriche valutate: {len(all_scores)}")
+
+            # Interpretazione qualitativa
+            if overall_avg >= 0.8:
+                interpretation = "🟢 ECCELLENTE - Sistema RAG molto performante"
+            elif overall_avg >= 0.6:
+                interpretation = "✅ BUONO - Sistema RAG ben funzionante"
+            elif overall_avg >= 0.4:
+                interpretation = "⚠️ DISCRETO - Sistema RAG con margini di miglioramento"
+            else:
+                interpretation = "❌ SCARSO - Sistema RAG necessita ottimizzazioni"
+
+            output.append(f"  🏆 Valutazione: {interpretation}")
+
+            # Distribuzione dei punteggi
+            excellent_count = sum(1 for score in all_scores if score >= 0.8)
+            good_count = sum(1 for score in all_scores if 0.6 <= score < 0.8)
+            fair_count = sum(1 for score in all_scores if 0.4 <= score < 0.6)
+            poor_count = sum(1 for score in all_scores if score < 0.4)
+
+            output.append(f"\n📊 DISTRIBUZIONE PUNTEGGI:")
+            output.append(
+                f"  🟢 Eccellenti (≥0.8): {excellent_count}/{len(all_scores)} ({excellent_count/len(all_scores)*100:.1f}%)")
+            output.append(
+                f"  ✅ Buoni (0.6-0.8): {good_count}/{len(all_scores)} ({good_count/len(all_scores)*100:.1f}%)")
+            output.append(
+                f"  ⚠️ Discreti (0.4-0.6): {fair_count}/{len(all_scores)} ({fair_count/len(all_scores)*100:.1f}%)")
+            output.append(
+                f"  ❌ Scarsi (<0.4): {poor_count}/{len(all_scores)} ({poor_count/len(all_scores)*100:.1f}%)")
+
+        output.append("\n" + "=" * 80)
+        output.append("🔚 FINE REPORT")
+        output.append("=" * 80)
+
+        return "\n".join(output)
+
+    def get_comprehensive_results_dict(self, results):
+        """Genera un dizionario strutturato con tutti i risultati di valutazione normalizzati per l'API"""
+
+        if not results or (not results.get('ragas') and not results.get('custom')):
+            return {
+                "status": "error",
+                "message": "Nessun risultato disponibile",
+                "ragas_metrics": {},
+                "custom_metrics": {},
+                "statistics": {}
+            }
+
+        # Prepara metriche RAGAS (già normalizzate)
+        ragas_results = results.get('ragas', {})
+        ragas_scores = [score for score in ragas_results.values(
+        ) if isinstance(score, (int, float))]
+
+        # Prepara metriche Custom (già normalizzate)
+        custom_results = results.get('custom', {})
+        custom_scores = [score for score in custom_results.values(
+        ) if isinstance(score, (int, float))]
+
+        # Calcola statistiche globali
+        all_scores = ragas_scores + custom_scores
+
+        statistics = {}
+        if all_scores:
+            statistics = {
+                "overall_average": float(np.mean(all_scores)),
+                "overall_std": float(np.std(all_scores)),
+                "overall_min": float(min(all_scores)),
+                "overall_max": float(max(all_scores)),
+                "total_metrics": len(all_scores),
+                "ragas_count": len(ragas_scores),
+                "custom_count": len(custom_scores),
+                "normalized": True  # Indica che i punteggi sono normalizzati
+            }
+
+            # Interpretazione qualitativa
+            avg = statistics["overall_average"]
+            if avg >= 0.8:
+                statistics["quality_assessment"] = "excellent"
+                statistics["quality_message"] = "Sistema RAG molto performante"
+            elif avg >= 0.6:
+                statistics["quality_assessment"] = "good"
+                statistics["quality_message"] = "Sistema RAG ben funzionante"
+            elif avg >= 0.4:
+                statistics["quality_assessment"] = "fair"
+                statistics["quality_message"] = "Sistema RAG con margini di miglioramento"
+            else:
+                statistics["quality_assessment"] = "poor"
+                statistics["quality_message"] = "Sistema RAG necessita ottimizzazioni"
+
+            # Distribuzione punteggi
+            excellent_count = sum(1 for score in all_scores if score >= 0.8)
+            good_count = sum(1 for score in all_scores if 0.6 <= score < 0.8)
+            fair_count = sum(1 for score in all_scores if 0.4 <= score < 0.6)
+            poor_count = sum(1 for score in all_scores if score < 0.4)
+
+            statistics["score_distribution"] = {
+                "excellent": {"count": excellent_count, "percentage": round(excellent_count/len(all_scores)*100, 1)},
+                "good": {"count": good_count, "percentage": round(good_count/len(all_scores)*100, 1)},
+                "fair": {"count": fair_count, "percentage": round(fair_count/len(all_scores)*100, 1)},
+                "poor": {"count": poor_count, "percentage": round(poor_count/len(all_scores)*100, 1)}
+            }
+
+        # Statistiche specifiche RAGAS
+        ragas_stats = {}
+        if ragas_scores:
+            ragas_stats = {
+                "average": float(np.mean(ragas_scores)),
+                "std": float(np.std(ragas_scores)),
+                "min": float(min(ragas_scores)),
+                "max": float(max(ragas_scores)),
+                "count": len(ragas_scores)
+            }
+
+        # Statistiche specifiche Custom
+        custom_stats = {}
+        if custom_scores:
+            custom_stats = {
+                "average": float(np.mean(custom_scores)),
+                "std": float(np.std(custom_scores)),
+                "min": float(min(custom_scores)),
+                "max": float(max(custom_scores)),
+                "count": len(custom_scores)
+            }
+
+        return {
+            "status": "success",
+            "normalized": True,
+            "ragas_metrics": {
+                "scores": {k: float(v) if isinstance(v, (int, float)) else v for k, v in ragas_results.items()},
+                "statistics": ragas_stats
+            },
+            "custom_metrics": {
+                "scores": {k: float(v) if isinstance(v, (int, float)) else v for k, v in custom_results.items()},
+                "statistics": custom_stats
+            },
+            "overall_statistics": statistics,
+            "summary": {
+                "total_metrics_evaluated": len(all_scores),
+                "ragas_metrics_count": len(ragas_scores),
+                "custom_metrics_count": len(custom_scores),
+                "evaluation_successful": len(all_scores) > 0,
+                "all_scores_normalized": True
+            }
+        }
+
+    def calculate_custom_metrics(self, query, answer, contexts_list):
+        """Placeholder per metriche custom - implementare secondo necessità"""
+        # Questo è un placeholder - dovresti implementare le tue metriche custom qui
+        return {
+            'response_length': len(answer),
+            'context_count': len(contexts_list),
+            'query_length': len(query)
         }
 
     def _evaluate_cached_metrics(self, query, answer, contexts_list):
@@ -685,145 +1007,3 @@ class RAGEvaluator:
             print(f"❌ Errore generale nel filtro automatico: {e}")
 
         return ragas_results
-
-    def get_comprehensive_results_string(self, results):
-        """Genera una string completa con tutti i risultati di valutazione e statistiche"""
-
-        if not results or (not results.get('ragas') and not results.get('custom')):
-            return "❌ Nessun risultato disponibile per la formattazione"
-
-        output = []
-        output.append("=" * 80)
-        output.append("📊 REPORT COMPLETO VALUTAZIONE RAG")
-        output.append("=" * 80)
-
-        # Sezione RAGAS
-        ragas_results = results.get('ragas', {})
-        if ragas_results:
-            output.append("\n🔍 METRICHE RAGAS:")
-            output.append("-" * 40)
-
-            ragas_scores = []
-            for metric_name, score in ragas_results.items():
-                status = self.get_status_emoji(score)
-                output.append(
-                    f"  {status} {metric_name.capitalize()}: {score:.4f}")
-                ragas_scores.append(score)
-
-            if ragas_scores:
-                ragas_avg = np.mean(ragas_scores)
-                ragas_std = np.std(ragas_scores)
-                ragas_min = min(ragas_scores)
-                ragas_max = max(ragas_scores)
-
-                output.append(f"\n📈 STATISTICHE RAGAS:")
-                output.append(f"  🎯 Media: {ragas_avg:.4f}")
-                output.append(f"  📊 Deviazione std: {ragas_std:.4f}")
-                output.append(f"  ⬇️ Minimo: {ragas_min:.4f}")
-                output.append(f"  ⬆️ Massimo: {ragas_max:.4f}")
-                output.append(f"  📋 Totale metriche: {len(ragas_scores)}")
-        else:
-            output.append("\n🔍 METRICHE RAGAS:")
-            output.append("-" * 40)
-            output.append("  ⚠️ Nessuna metrica RAGAS disponibile")
-
-        # Sezione Custom
-        custom_results = results.get('custom', {})
-        if custom_results:
-            output.append("\n🛠️ METRICHE CUSTOM:")
-            output.append("-" * 40)
-
-            custom_scores = []
-            for metric_name, score in custom_results.items():
-                if isinstance(score, (int, float)):
-                    status = self.get_status_emoji(score)
-                    output.append(
-                        f"  {status} {metric_name.replace('_', ' ').title()}: {score:.4f}")
-                    custom_scores.append(score)
-                else:
-                    output.append(
-                        f"  📊 {metric_name.replace('_', ' ').title()}: {score}")
-
-            if custom_scores:
-                custom_avg = np.mean(custom_scores)
-                custom_std = np.std(custom_scores)
-                custom_min = min(custom_scores)
-                custom_max = max(custom_scores)
-
-                output.append(f"\n📈 STATISTICHE CUSTOM:")
-                output.append(f"  🎯 Media: {custom_avg:.4f}")
-                output.append(f"  📊 Deviazione std: {custom_std:.4f}")
-                output.append(f"  ⬇️ Minimo: {custom_min:.4f}")
-                output.append(f"  ⬆️ Massimo: {custom_max:.4f}")
-                output.append(f"  📋 Totale metriche: {len(custom_scores)}")
-        else:
-            output.append("\n🛠️ METRICHE CUSTOM:")
-            output.append("-" * 40)
-            output.append("  ⚠️ Nessuna metrica custom disponibile")
-
-        # Sezione riassunto globale
-        all_scores = []
-        ragas_scores = [score for score in ragas_results.values(
-        ) if isinstance(score, (int, float))]
-        custom_scores = [score for score in custom_results.values(
-        ) if isinstance(score, (int, float))]
-
-        all_scores.extend(ragas_scores)
-        all_scores.extend(custom_scores)
-
-        if all_scores:
-            overall_avg = np.mean(all_scores)
-            overall_std = np.std(all_scores)
-            overall_min = min(all_scores)
-            overall_max = max(all_scores)
-
-            output.append("\n🌟 RIASSUNTO GLOBALE:")
-            output.append("-" * 40)
-            output.append(f"  🎯 Media generale: {overall_avg:.4f}")
-            output.append(f"  📊 Deviazione std generale: {overall_std:.4f}")
-            output.append(f"  ⬇️ Punteggio minimo: {overall_min:.4f}")
-            output.append(f"  ⬆️ Punteggio massimo: {overall_max:.4f}")
-            output.append(f"  📋 Totale metriche valutate: {len(all_scores)}")
-
-            # Interpretazione qualitativa
-            if overall_avg >= 0.8:
-                interpretation = "🟢 ECCELLENTE - Sistema RAG molto performante"
-            elif overall_avg >= 0.6:
-                interpretation = "✅ BUONO - Sistema RAG ben funzionante"
-            elif overall_avg >= 0.4:
-                interpretation = "⚠️ DISCRETO - Sistema RAG con margini di miglioramento"
-            else:
-                interpretation = "❌ SCARSO - Sistema RAG necessita ottimizzazioni"
-
-            output.append(f"  🏆 Valutazione: {interpretation}")
-
-            # Distribuzione dei punteggi
-            excellent_count = sum(1 for score in all_scores if score >= 0.8)
-            good_count = sum(1 for score in all_scores if 0.6 <= score < 0.8)
-            fair_count = sum(1 for score in all_scores if 0.4 <= score < 0.6)
-            poor_count = sum(1 for score in all_scores if score < 0.4)
-
-            output.append(f"\n📊 DISTRIBUZIONE PUNTEGGI:")
-            output.append(
-                f"  🟢 Eccellenti (≥0.8): {excellent_count}/{len(all_scores)} ({excellent_count/len(all_scores)*100:.1f}%)")
-            output.append(
-                f"  ✅ Buoni (0.6-0.8): {good_count}/{len(all_scores)} ({good_count/len(all_scores)*100:.1f}%)")
-            output.append(
-                f"  ⚠️ Discreti (0.4-0.6): {fair_count}/{len(all_scores)} ({fair_count/len(all_scores)*100:.1f}%)")
-            output.append(
-                f"  ❌ Scarsi (<0.4): {poor_count}/{len(all_scores)} ({poor_count/len(all_scores)*100:.1f}%)")
-
-        output.append("\n" + "=" * 80)
-        output.append("🔚 FINE REPORT")
-        output.append("=" * 80)
-
-        return "\n".join(output)
-
-    def calculate_custom_metrics(self, query, answer, contexts_list):
-        """Placeholder per metriche custom - implementare secondo necessità"""
-        # Questo è un placeholder - dovresti implementare le tue metriche custom qui
-        return {
-            'response_length': len(answer),
-            'context_count': len(contexts_list),
-            'query_length': len(query)
-        }
