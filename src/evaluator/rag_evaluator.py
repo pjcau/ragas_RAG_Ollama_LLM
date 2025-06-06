@@ -225,24 +225,28 @@ class RAGEvaluator:
             else:
                 print(f"✅ Cache già presente con {len(self.working_metrics_cache)} metriche")
             working_metrics = self.working_metrics_cache
+            
+            # In test_mode, valuta solo se abbiamo metriche funzionanti
+            evaluate_ragas = self.working_metrics_cache and len(self.working_metrics_cache) > 0
         else:
-            # Modalità normale - esegui test solo se necessario
-            if not self.working_metrics_cache:
-                print("🔍 Prima esecuzione - testing metriche RAGAS...")
-                working_metrics, failed_metrics = self.test_individual_metrics_enhanced(test_mode)
-
-                if not working_metrics:
-                    print("❌ Nessuna metrica RAGAS funzionante trovata!")
-                    print("✅ Ma abbiamo comunque le metriche custom!")
+            # Modalità normale - carica direttamente le metriche RAGAS senza test
+            print("🚀 Modalità normale - caricamento diretto metriche RAGAS SENZA test preventivi")
+            if RAGAS_AVAILABLE:
+                print("📊 RAGAS disponibile - carico metriche direttamente...")
+                # Carica direttamente le metriche RAGAS standard
+                available_metrics = self._load_standard_ragas_metrics()
+                if available_metrics:
+                    print(f"✅ Caricate {len(available_metrics)} metriche RAGAS standard")
+                    evaluate_ragas = True
                 else:
-                    self.working_metrics_cache = working_metrics
-                    print(f"✅ {len(working_metrics)} metriche RAGAS funzionanti trovate")
+                    print("❌ Errore nel caricamento metriche RAGAS")
+                    evaluate_ragas = False
             else:
-                working_metrics = self.working_metrics_cache
-                print(f"✅ Utilizzando {len(working_metrics)} metriche RAGAS dalla cache")
+                print("⚠️ RAGAS non disponibile - solo custom metrics")
+                evaluate_ragas = False
 
-        # Valuta metriche RAGAS solo se abbiamo metriche funzionanti
-        if self.working_metrics_cache and len(self.working_metrics_cache) > 0:
+        # Valuta metriche RAGAS se richiesto
+        if evaluate_ragas:
             print("\n📊 Valutando metriche RAGAS...")
 
             # Crea dataset per RAGAS
@@ -261,7 +265,18 @@ class RAGEvaluator:
                     eval_llm = self.create_ultra_compatible_llm()
                     eval_embeddings = self.create_robust_embeddings()
 
-                    for metric_name, metric_info in self.working_metrics_cache.items():
+                    # Determina quali metriche usare
+                    if test_mode and self.working_metrics_cache:
+                        # In test_mode usa solo metriche dalla cache (già testate)
+                        metrics_to_evaluate = self.working_metrics_cache
+                        print(f"📋 Usando {len(metrics_to_evaluate)} metriche dalla cache")
+                    else:
+                        # In modalità normale usa le metriche caricate direttamente
+                        print("📋 Modalità normale: usando metriche RAGAS caricate direttamente")
+                        metrics_to_evaluate = available_metrics
+                        print(f"📊 Usando {len(metrics_to_evaluate)} metriche RAGAS")
+
+                    for metric_name, metric_info in metrics_to_evaluate.items():
                         print(f"📊 Valutando {metric_name}...")
 
                         try:
@@ -279,7 +294,6 @@ class RAGEvaluator:
 
                             if result.scores and len(result.scores) > 0:
                                 raw_output = result.scores[0]
-                                print(f"  Raw Output: {raw_output}")  # DEBUG
 
                                 score_key = metric_info.get('key', metric_name)
                                 if score_key in raw_output:
@@ -445,3 +459,85 @@ class RAGEvaluator:
             print(f"🎖️ Rating: {rating}")
         
         print("="*60)
+
+    def _load_standard_ragas_metrics(self):
+        """Carica le metriche RAGAS standard senza test preventivi"""
+        try:
+            print("🔍 Caricamento metriche RAGAS standard...")
+            
+            # Se RAGAS non è disponibile, ritorna vuoto
+            if not RAGAS_AVAILABLE:
+                print("❌ RAGAS non disponibile")
+                return {}
+            
+            # Usa il MetricsTester se disponibile per ottenere le metriche
+            if self.metrics_tester is not None:
+                print("📦 Usando MetricsTester per ottenere metriche...")
+                # Prova a ottenere le metriche dal MetricsTester
+                try:
+                    # Usa un metodo esistente o crea le metriche base
+                    if hasattr(self.metrics_tester, 'get_basic_metrics'):
+                        metrics = self.metrics_tester.get_basic_metrics()
+                    else:
+                        # Fallback: crea metriche di base manualmente
+                        metrics = self._create_basic_ragas_metrics()
+                    
+                    print(f"✅ Ottenute {len(metrics)} metriche standard")
+                    return metrics
+                    
+                except Exception as e:
+                    print(f"⚠️ Errore MetricsTester: {e}")
+                    return self._create_basic_ragas_metrics()
+            else:
+                print("⚠️ MetricsTester non disponibile, uso fallback")
+                return self._create_basic_ragas_metrics()
+                
+        except Exception as e:
+            print(f"❌ Errore generale nel caricamento: {e}")
+            return {}
+
+    def _create_basic_ragas_metrics(self):
+        """Crea un set base di metriche RAGAS per valutazione diretta"""
+        try:
+            print("🔧 Creazione metriche RAGAS di base...")
+            
+            # Import delle metriche principali
+            from ragas.metrics import (
+                answer_relevancy,
+                faithfulness,
+                context_precision,
+                context_recall
+            )
+            
+            basic_metrics = {
+                'answer_relevancy': {
+                    'metric': answer_relevancy,
+                    'key': 'answer_relevancy',
+                    'description': 'Rilevanza della risposta'
+                },
+                'faithfulness': {
+                    'metric': faithfulness,
+                    'key': 'faithfulness',
+                    'description': 'Fedeltà al contesto'
+                },
+                'context_precision': {
+                    'metric': context_precision,
+                    'key': 'context_precision',
+                    'description': 'Precisione del contesto'
+                },
+                'context_recall': {
+                    'metric': context_recall,
+                    'key': 'context_recall',
+                    'description': 'Recall del contesto'
+                }
+            }
+            
+            print(f"✅ Create {len(basic_metrics)} metriche di base")
+            return basic_metrics
+            
+        except ImportError as e:
+            print(f"❌ Errore import RAGAS: {e}")
+            return {}
+        except Exception as e:
+            print(f"❌ Errore creazione metriche: {e}")
+            return {}
