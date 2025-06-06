@@ -1,37 +1,310 @@
-from evaluator.rag_evaluator import RAGEvaluator
+import time
 
-def test_metrics(rag_evaluator: RAGEvaluator, test_dataset):
-    """Test various metrics using the RAGEvaluator instance."""
-    results = {}
-    
-    # Define metrics to test
-    metrics_to_test = [
-        ("faithfulness", rag_evaluator.test_faithfulness),
-        ("answer_relevancy", rag_evaluator.test_answer_relevancy),
-        ("context_precision", rag_evaluator.test_context_precision),
-        ("context_recall", rag_evaluator.test_context_recall),
-    ]
-    
-    for metric_name, metric_func in metrics_to_test:
-        print(f"Testing {metric_name}...")
-        result = rag_evaluator.test_metric_with_retries(metric_name, metric_func, test_dataset)
-        results[metric_name] = result
-    
-    return results
+# Import condizionali per le dipendenze
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
+    # Mock numpy per isnan
+    class MockNumpy:
+        @staticmethod
+        def isnan(value):
+            try:
+                return value != value
+            except:
+                return False
+    np = MockNumpy()
 
-def run_all_tests():
-    """Run all metric tests and print results."""
-    evaluator = RAGEvaluator()
-    test_dataset = evaluator.create_test_dataset_complete()
+try:
+    from datasets import Dataset
+    DATASETS_AVAILABLE = True
+except ImportError:
+    DATASETS_AVAILABLE = False
+    # Mock Dataset class
+    class MockDataset:
+        def __init__(self, data):
+            self.data = data
+        
+        @classmethod
+        def from_list(cls, data_list):
+            return cls(data_list)
+        
+        def __getitem__(self, index):
+            return self.data[index]
+        
+        def __len__(self):
+            return len(self.data)
+        
+        def __iter__(self):
+            return iter(self.data)
     
-    if not test_dataset:
-        print("No valid test dataset available.")
-        return
+    Dataset = MockDataset
+
+# RAGAS imports con gestione errori
+try:
+    from ragas import evaluate
+    from ragas.metrics import (
+        faithfulness,
+        answer_relevancy,
+        context_precision,
+        context_recall
+    )
+    RAGAS_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ RAGAS non disponibile: {e}")
+    RAGAS_AVAILABLE = False
+
+# Import metriche opzionali
+try:
+    from ragas.metrics import answer_correctness
+    ANSWER_CORRECTNESS_AVAILABLE = True
+except ImportError:
+    ANSWER_CORRECTNESS_AVAILABLE = False
+
+try:
+    from ragas.metrics import answer_similarity
+    ANSWER_SIMILARITY_AVAILABLE = True
+except ImportError:
+    ANSWER_SIMILARITY_AVAILABLE = False
+
+try:
+    from ragas.metrics import context_entity_recall
+    CONTEXT_ENTITY_RECALL_AVAILABLE = True
+except ImportError:
+    CONTEXT_ENTITY_RECALL_AVAILABLE = False
+
+try:
+    from ragas.metrics import coherence
+    COHERENCE_AVAILABLE = True
+except ImportError:
+    COHERENCE_AVAILABLE = False
+
+try:
+    from ragas.metrics import fluency
+    FLUENCY_AVAILABLE = True
+except ImportError:
+    FLUENCY_AVAILABLE = False
+
+try:
+    from ragas.metrics import conciseness
+    CONCISENESS_AVAILABLE = True
+except ImportError:
+    CONCISENESS_AVAILABLE = False
+
+from ..models.llm_factory import LLMFactory
+from ..config.settings import RETRY_CONFIG
+from .dataset_validator import DatasetValidator
+
+
+class MetricsTester:
+    """Classe per il test delle metriche RAGAS"""
     
-    results = test_metrics(evaluator, test_dataset)
+    def __init__(self):
+        self.working_metrics_cache = None
     
-    for metric_name, result in results.items():
-        if result['success']:
-            print(f"{metric_name}: Success with score {result['score']:.4f}")
-        else:
-            print(f"{metric_name}: Failed with error {result['error']}")
+    def test_metric_with_retries(self, metric_name, metric_obj, test_dataset, test_llm, test_embeddings, max_retries=None, test_mode=False):
+        """Testa una metrica con retry intelligenti"""
+        
+        if max_retries is None:
+            max_retries = RETRY_CONFIG['max_retries']
+        if test_mode == False:
+            max_retries = 1
+
+        for attempt in range(max_retries):
+            try:
+                print(f"  🔄 Tentativo {attempt + 1}/{max_retries} per {metric_name}...")
+                
+                start_time = time.time()
+                
+                result = evaluate(
+                    dataset=test_dataset,
+                    metrics=[metric_obj],
+                    llm=test_llm,
+                    embeddings=test_embeddings,
+                    raise_exceptions=True
+                )
+                
+                elapsed = time.time() - start_time
+                
+                if result.scores and len(result.scores) > 0:
+                    # Cerca score con più varianti di nomi
+                    score = None
+                    score_key = None
+                    
+                    possible_keys = [
+                        metric_name,
+                        str(metric_obj),
+                        metric_obj.__class__.__name__.lower(),
+                        metric_obj.__class__.__name__,
+                        f"{metric_name}_score",
+                        "score",
+                        "value"
+                    ]
+                    
+                    # Per alcune metriche specifiche, aggiungi chiavi note
+                    if metric_name == "answer_similarity":
+                        possible_keys.extend(["semantic_similarity", "similarity"])
+                    elif metric_name == "context_entity_recall":
+                        possible_keys.extend(["entity_recall", "recall"])
+                    
+                    for key in possible_keys:
+                        if key in result.scores[0]:
+                            score = result.scores[0][key]
+                            score_key = key
+                            break
+                    
+                    if score is not None and not np.isnan(score):
+                        return {
+                            'success': True,
+                            'score': score,
+                            'time': elapsed,
+                            'key': score_key,
+                            'attempts': attempt + 1
+                        }
+                    else:
+                        if attempt == max_retries - 1:
+                            return {
+                                'success': False,
+                                'error': f"Score NaN. Available keys: {list(result.scores[0].keys())}",
+                                'attempts': attempt + 1
+                            }
+                        else:
+                            print(f"    ⚠️ Score NaN, retry...")
+                            continue
+                else:
+                    if attempt == max_retries - 1:
+                        return {
+                            'success': False,
+                            'error': "No scores returned",
+                            'attempts': attempt + 1
+                        }
+                    else:
+                        print(f"    ⚠️ No scores, retry...")
+                        continue
+                        
+            except Exception as e:
+                error_msg = str(e)
+                
+                # Se è un errore di parsing, prova con dataset semplificato
+                if "output parser" in error_msg.lower() and attempt < max_retries - 1:
+                    print(f"    🔧 Parser error, simplifying dataset...")
+                    # Semplifica answer e contexts per il prossimo tentativo
+                    simplified_data = []
+                    for item in test_dataset:
+                        simplified_item = item.copy()
+                        # Accorcia answer
+                        simplified_item['answer'] = item['answer'][:200] + "."
+                        # Accorcia contexts
+                        simplified_item['contexts'] = [ctx[:300] + "." for ctx in item['contexts'][:3]]
+                        simplified_data.append(simplified_item)
+                    
+                    test_dataset = Dataset.from_list(simplified_data)
+                    continue
+                elif attempt == max_retries - 1:
+                    return {
+                        'success': False,
+                        'error': error_msg[:150],
+                        'attempts': attempt + 1
+                    }
+                else:
+                    print(f"    ⚠️ Error: {error_msg[:50]}..., retry...")
+                    time.sleep(RETRY_CONFIG['retry_delay'])
+                    continue
+        
+        return {
+            'success': False,
+            'error': "Max retries exceeded",
+            'attempts': max_retries
+        }
+    
+    def test_individual_metrics_enhanced(self, test_mode=False):
+        """Versione migliorata del test delle metriche"""
+        print("\n🧪 TEST METRICHE INDIVIDUALI AVANZATO:")
+        print("=" * 50)
+        
+        # LLM e embeddings ultra-compatibili
+        test_llm = LLMFactory.create_ultra_compatible_llm()
+        test_embeddings = LLMFactory.create_robust_embeddings()
+        
+        # Dataset di test molto robusto
+        test_dataset = DatasetValidator.create_test_dataset_complete()
+        test_dataset = DatasetValidator.validate_and_fix_dataset(test_dataset)
+        
+        if not test_dataset:
+            print("❌ Impossibile creare dataset valido")
+            return {}, {}
+        
+        # Lista completa di metriche con configurazioni specifiche
+        metrics_to_test = []
+        
+        # Aggiungi solo metriche disponibili
+        if RAGAS_AVAILABLE:
+            if faithfulness is not None:
+                metrics_to_test.append(("faithfulness", faithfulness, "Fedeltà al contesto"))
+            if answer_relevancy is not None:
+                metrics_to_test.append(("answer_relevancy", answer_relevancy, "Rilevanza risposta"))
+            if context_precision is not None:
+                metrics_to_test.append(("context_precision", context_precision, "Precisione contesto"))
+            if context_recall is not None:
+                metrics_to_test.append(("context_recall", context_recall, "Richiamo contesto"))
+        
+        # Aggiungi metriche opzionali con controlli specifici
+        if ANSWER_CORRECTNESS_AVAILABLE and answer_correctness is not None:
+            metrics_to_test.append(("answer_correctness", answer_correctness, "Correttezza"))
+        if ANSWER_SIMILARITY_AVAILABLE and answer_similarity is not None:
+            metrics_to_test.append(("answer_similarity", answer_similarity, "Similarità"))
+        if CONTEXT_ENTITY_RECALL_AVAILABLE and context_entity_recall is not None:
+            metrics_to_test.append(("context_entity_recall", context_entity_recall, "Entity Recall"))
+        if COHERENCE_AVAILABLE and coherence is not None:
+            metrics_to_test.append(("coherence", coherence, "Coerenza"))
+        if FLUENCY_AVAILABLE and fluency is not None:
+            metrics_to_test.append(("fluency", fluency, "Fluidità"))
+        if CONCISENESS_AVAILABLE and conciseness is not None:
+            metrics_to_test.append(("conciseness", conciseness, "Concisione"))
+        
+        if not metrics_to_test:
+            print("❌ Nessuna metrica RAGAS disponibile")
+            return {}, {}
+        
+        working_metrics = {}
+        failed_metrics = {}
+        
+        for metric_name, metric_obj, description in metrics_to_test:
+            print(f"\n🎯 Testing {metric_name} ({description})...")
+            
+            result = self.test_metric_with_retries(
+                metric_name, metric_obj, test_dataset, test_llm, test_embeddings, test_mode
+            )
+            
+            if result['success']:
+                working_metrics[metric_name] = {
+                    'metric': metric_obj,
+                    'score': result['score'],
+                    'time': result['time'],
+                    'key': result['key'],
+                    'attempts': result['attempts']
+                }
+                status = "🟢" if result['score'] > 0.7 else "✅" if result['score'] > 0.4 else "⚠️"
+                print(f"  {status} {metric_name}: {result['score']:.4f} ({result['time']:.1f}s, {result['attempts']} attempts)")
+            else:
+                failed_metrics[metric_name] = result['error']
+                print(f"  ❌ {metric_name}: {result['error'][:80]}...")
+        
+        # Cache dei risultati
+        self.working_metrics_cache = working_metrics
+        
+        # Riassunto migliorato
+        print(f"\n📊 RIASSUNTO TEST AVANZATO:")
+        print(f"✅ Metriche funzionanti: {len(working_metrics)}/{len(metrics_to_test)}")
+        
+        if working_metrics:
+            for name, info in working_metrics.items():
+                print(f"  🎯 {name}: {info['score']:.4f} (key: {info['key']})")
+        
+        if failed_metrics:
+            print(f"\n❌ Metriche fallite: {len(failed_metrics)}")
+            for name, error in failed_metrics.items():
+                print(f"  💥 {name}: {error[:60]}...")
+        
+        return working_metrics, failed_metrics

@@ -1,468 +1,187 @@
 import time
-import numpy as np
-from datasets import Dataset
-import re
-import json
+
+# Import condizionali per numpy
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
+    # Mock numpy per isnan
+    class MockNumpy:
+        @staticmethod
+        def isnan(value):
+            try:
+                return value != value
+            except:
+                return False
+    np = MockNumpy()
+
+# Import condizionali per datasets
+try:
+    from datasets import Dataset
+    DATASETS_AVAILABLE = True
+except ImportError:
+    DATASETS_AVAILABLE = False
+    # Mock Dataset class
+    class MockDataset:
+        def __init__(self, data):
+            self.data = data
+        
+        @classmethod
+        def from_list(cls, data_list):
+            return cls(data_list)
+        
+        def __getitem__(self, index):
+            return self.data[index]
+        
+        def __len__(self):
+            return len(self.data)
+        
+        def __iter__(self):
+            return iter(self.data)
+    
+    Dataset = MockDataset
 
 # RAGAS imports con gestione errori
 try:
     from ragas import evaluate
-    from ragas.metrics import (
-        faithfulness,
-        answer_relevancy,
-        context_precision,
-        context_recall
-    )
     RAGAS_AVAILABLE = True
 except ImportError as e:
     print(f"⚠️ RAGAS non disponibile: {e}")
     RAGAS_AVAILABLE = False
 
-# Import metriche opzionali
+# Import dei moduli refactorizzati con gestione errori
 try:
-    from ragas.metrics import answer_correctness
-    ANSWER_CORRECTNESS_AVAILABLE = True
+    from .metrics_tester import MetricsTester
+    METRICS_TESTER_AVAILABLE = True
 except ImportError:
-    ANSWER_CORRECTNESS_AVAILABLE = False
-
-try:
-    from ragas.metrics import answer_similarity
-    ANSWER_SIMILARITY_AVAILABLE = True
-except ImportError:
-    ANSWER_SIMILARITY_AVAILABLE = False
+    METRICS_TESTER_AVAILABLE = False
+    MetricsTester = None
 
 try:
-    from ragas.metrics import context_entity_recall
-    CONTEXT_ENTITY_RECALL_AVAILABLE = True
+    from .custom_metrics import CustomMetrics
+    CUSTOM_METRICS_AVAILABLE = True
 except ImportError:
-    CONTEXT_ENTITY_RECALL_AVAILABLE = False
+    CUSTOM_METRICS_AVAILABLE = False
+    CustomMetrics = None
 
 try:
-    from ragas.metrics import coherence
-    COHERENCE_AVAILABLE = True
+    from .dataset_validator import DatasetValidator
+    DATASET_VALIDATOR_AVAILABLE = True
 except ImportError:
-    COHERENCE_AVAILABLE = False
+    DATASET_VALIDATOR_AVAILABLE = False
+    DatasetValidator = None
 
 try:
-    from ragas.metrics import fluency
-    FLUENCY_AVAILABLE = True
+    from ..models.llm_factory import LLMFactory
+    LLM_FACTORY_AVAILABLE = True
 except ImportError:
-    FLUENCY_AVAILABLE = False
+    LLM_FACTORY_AVAILABLE = False
+    LLMFactory = None
 
 try:
-    from ragas.metrics import conciseness
-    CONCISENESS_AVAILABLE = True
+    from ..utils.display_helper import DisplayHelper
+    DISPLAY_HELPER_AVAILABLE = True
 except ImportError:
-    CONCISENESS_AVAILABLE = False
-
-from langchain_ollama import ChatOllama
-from langchain_ollama.embeddings import OllamaEmbeddings
-from langchain_openai import ChatOpenAI
-from langchain_openai import OpenAIEmbeddings
-
-OPENAI_API_KEY = ".."  # Inserisci qui la tua chiave API OpenAI
-
+    DISPLAY_HELPER_AVAILABLE = False
+    DisplayHelper = None
 
 class RAGEvaluator:
-    """Classe per la valutazione completa di sistemi RAG"""
+    """Classe principale per la valutazione completa di sistemi RAG"""
 
     def __init__(self):
         self.eval_llm = None
         self.eval_embeddings = None
         self.working_metrics_cache = None  # Cache per metriche funzionanti
+        
+        # Inizializza il metrics_tester solo se disponibile
+        if METRICS_TESTER_AVAILABLE and MetricsTester is not None:
+            self.metrics_tester = MetricsTester()
+        else:
+            print("⚠️ MetricsTester non disponibile")
+            self.metrics_tester = None
 
     def create_ultra_compatible_llm(self):
         """Crea un LLM ultra-compatibile con RAGAS"""
-
-        # return ChatOpenAI(model="gpt-4o", api_key=OPENAI_API_KEY)
-        return ChatOllama(
-            model="deepseek-r1",
-            temperature=0.0,
-            top_p=0.1,
-            num_predict=100,
-            format="json",
-        )
+        if LLM_FACTORY_AVAILABLE and LLMFactory is not None:
+            return LLMFactory.create_ultra_compatible_llm()
+        else:
+            raise ImportError("LLMFactory non disponibile")
 
     def create_robust_embeddings(self):
         """Embeddings più robusti"""
-        # return OpenAIEmbeddings(api_key=OPENAI_API_KEY)
-        return OllamaEmbeddings(
-            model="mxbai-embed-large"
-        )
+        if LLM_FACTORY_AVAILABLE and LLMFactory is not None:
+            return LLMFactory.create_robust_embeddings()
+        else:
+            raise ImportError("LLMFactory non disponibile")
 
     def create_test_dataset_complete(self):
         """Crea un dataset di test completo e robusto per testare le metriche"""
-
-        # Dataset di test con esempi diversificati
-        test_data = [{
-            'question': 'What is machine learning and how does it work?',
-            'answer': 'Machine learning is a subset of artificial intelligence that enables computers to learn and make decisions from data without being explicitly programmed. It works by using algorithms to identify patterns in data, training models on these patterns, and then using the trained models to make predictions or decisions on new, unseen data. The process typically involves data collection, preprocessing, feature selection, model training, validation, and deployment.',
-            'contexts': [
-                'Machine learning is a method of data analysis that automates analytical model building. It is a branch of artificial intelligence based on the idea that systems can learn from data, identify patterns and make decisions with minimal human intervention.',
-                'The machine learning process involves several key steps: data collection and preparation, choosing an appropriate algorithm, training the model on a dataset, evaluating the model performance, and fine-tuning parameters to improve accuracy.',
-                'Common machine learning algorithms include supervised learning (like linear regression and decision trees), unsupervised learning (like clustering and dimensionality reduction), and reinforcement learning (where agents learn through interaction with an environment).',
-                'Machine learning applications are widespread, including recommendation systems, image recognition, natural language processing, fraud detection, and autonomous vehicles. The field continues to evolve with advances in deep learning and neural networks.'
-            ],
-            'ground_truth': 'Machine learning is a subset of AI that uses algorithms to learn patterns from data and make predictions without explicit programming.'
-        }]
-
-        return Dataset.from_list(test_data)
+        if DATASET_VALIDATOR_AVAILABLE and DatasetValidator is not None:
+            return DatasetValidator.create_test_dataset_complete()
+        else:
+            raise ImportError("DatasetValidator non disponibile")
 
     def validate_dataset(self, dataset):
         """Valida la struttura e il contenuto di un dataset"""
-
-        if not dataset or len(dataset) == 0:
+        if DATASET_VALIDATOR_AVAILABLE and DatasetValidator is not None:
+            return DatasetValidator.validate_dataset(dataset)
+        else:
             return False
-
-        required_fields = ['question', 'answer', 'contexts']
-
-        for item in dataset:
-            # Controlla campi obbligatori
-            for field in required_fields:
-                if field not in item:
-                    print(f"❌ Campo mancante: {field}")
-                    return False
-
-                if not item[field]:
-                    print(f"❌ Campo vuoto: {field}")
-                    return False
-
-            # Valida specificamente i contexts
-            if not isinstance(item['contexts'], list):
-                print(f"❌ Contexts deve essere una lista")
-                return False
-
-            if len(item['contexts']) == 0:
-                print(f"❌ Lista contexts vuota")
-                return False
-
-            # Controlla che ogni context sia una stringa non vuota
-            for i, ctx in enumerate(item['contexts']):
-                if not isinstance(ctx, str) or len(ctx.strip()) < 10:
-                    print(f"❌ Context {i} non valido o troppo corto")
-                    return False
-
-        return True
 
     def get_status_emoji(self, score):
         """Restituisce emoji basato sul punteggio"""
-        if score >= 0.8:
-            return "🟢"  # Eccellente
-        elif score >= 0.6:
-            return "✅"  # Buono
-        elif score >= 0.4:
-            return "⚠️"  # Discreto
+        if DISPLAY_HELPER_AVAILABLE and DisplayHelper is not None:
+            return DisplayHelper.get_status_emoji(score)
         else:
-            return "❌"  # Scarso
+            # Fallback semplice
+            if score >= 0.8:
+                return "🟢"
+            elif score >= 0.6:
+                return "✅"
+            elif score >= 0.4:
+                return "⚠️"
+            else:
+                return "❌"
 
     def validate_and_fix_dataset(self, dataset):
         """Valida e corregge automaticamente il dataset"""
-        print("\n🔧 VALIDAZIONE E CORREZIONE DATASET:")
-        print("=" * 45)
-
-        if not dataset or len(dataset) == 0:
-            print("❌ Dataset vuoto!")
-            return None
-
-        sample = dataset[0]
-        fixed = False
-
-        # Fix question
-        if 'question' not in sample or not sample['question'].strip():
-            print("🔧 Fixing question...")
-            sample['question'] = "What information does this document provide?"
-            fixed = True
-
-        # Fix answer
-        if 'answer' not in sample or not sample['answer'].strip():
-            print("❌ Answer mancante o vuoto!")
-            return None
-
-        # Fix contexts
-        if 'contexts' not in sample or not sample['contexts']:
-            print("❌ Contexts mancanti!")
-            return None
-
-        # Pulisci e migliora contexts
-        clean_contexts = []
-        for ctx in sample['contexts']:
-            if isinstance(ctx, str) and len(ctx.strip()) >= 20:
-                # Assicurati che termini con punteggiatura
-                ctx = ctx.strip()
-                if not ctx.endswith(('.', '!', '?')):
-                    ctx += "."
-                clean_contexts.append(ctx)
-
-        if len(clean_contexts) == 0:
-            print("❌ Nessun context valido dopo pulizia!")
-            return None
-
-        sample['contexts'] = clean_contexts[:5]  # Max 5 contexts
-
-        # Aggiungi ground_truth se mancante
-        if 'ground_truth' not in sample or not sample['ground_truth']:
-            # Crea ground truth dalla prima frase dell'answer
-            first_sentence = sample['answer'].split('.')[0].strip()
-            if len(first_sentence) > 10:
-                sample['ground_truth'] = first_sentence + "."
-            else:
-                sample['ground_truth'] = sample['answer'][:100].strip() + "."
-            fixed = True
-
-        if fixed:
-            print("✅ Dataset corretto automaticamente")
-
-        # Ricrea dataset con dati corretti
-        corrected_dataset = Dataset.from_list([sample])
-
-        # Validazione finale
-        if self.validate_dataset(corrected_dataset):
-            return corrected_dataset
+        if DATASET_VALIDATOR_AVAILABLE and DatasetValidator is not None:
+            return DatasetValidator.validate_and_fix_dataset(dataset)
         else:
-            return None
+            print("⚠️ DatasetValidator non disponibile, usando fallback")
+            return dataset
 
     def test_metric_with_retries(self, metric_name, metric_obj, test_dataset, test_llm, test_embeddings, max_retries=3):
         """Testa una metrica con retry intelligenti"""
+        if self.metrics_tester is not None:
+            return self.metrics_tester.test_metric_with_retries(
+                metric_name, metric_obj, test_dataset, test_llm, test_embeddings, max_retries
+            )
+        else:
+            return {'success': False, 'error': 'MetricsTester non disponibile'}
 
-        for attempt in range(max_retries):
-            try:
-                print(
-                    f"  🔄 Tentativo {attempt + 1}/{max_retries} per {metric_name}...")
-
-                start_time = time.time()
-
-                result = evaluate(
-                    dataset=test_dataset,
-                    metrics=[metric_obj],
-                    llm=test_llm,
-                    embeddings=test_embeddings,
-                    raise_exceptions=True
-                    # RIMUOVI: max_workers=1  <-- Questo causa l'errore!
-                )
-
-                elapsed = time.time() - start_time
-
-                if result.scores and len(result.scores) > 0:
-                    # Cerca score con più varianti di nomi
-                    score = None
-                    score_key = None
-
-                    possible_keys = [
-                        metric_name,
-                        str(metric_obj),
-                        metric_obj.__class__.__name__.lower(),
-                        metric_obj.__class__.__name__,
-                        f"{metric_name}_score",
-                        "score",
-                        "value"
-                    ]
-
-                    # Per alcune metriche specifiche, aggiungi chiavi note
-                    if metric_name == "answer_similarity":
-                        possible_keys.extend(
-                            ["semantic_similarity", "similarity"])
-                    elif metric_name == "context_entity_recall":
-                        possible_keys.extend(["entity_recall", "recall"])
-
-                    for key in possible_keys:
-                        if key in result.scores[0]:
-                            score = result.scores[0][key]
-                            score_key = key
-                            break
-
-                    if score is not None and not np.isnan(score):
-                        return {
-                            'success': True,
-                            'score': score,
-                            'time': elapsed,
-                            'key': score_key,
-                            'attempts': attempt + 1
-                        }
-                    else:
-                        if attempt == max_retries - 1:
-                            return {
-                                'success': False,
-                                'error': f"Score NaN. Available keys: {list(result.scores[0].keys())}",
-                                'attempts': attempt + 1
-                            }
-                        else:
-                            print(f"    ⚠️ Score NaN, retry...")
-                            continue
-                else:
-                    if attempt == max_retries - 1:
-                        return {
-                            'success': False,
-                            'error': "No scores returned",
-                            'attempts': attempt + 1
-                        }
-                    else:
-                        print(f"    ⚠️ No scores, retry...")
-                        continue
-
-            except Exception as e:
-                error_msg = str(e)
-
-                # Se è un errore di parsing, prova con dataset semplificato
-                if "output parser" in error_msg.lower() and attempt < max_retries - 1:
-                    print(f"    🔧 Parser error, simplifying dataset...")
-                    # Semplifica answer e contexts per il prossimo tentativo
-                    simplified_data = []
-                    for item in test_dataset:
-                        simplified_item = item.copy()
-                        # Accorcia answer
-                        simplified_item['answer'] = item['answer'][:200] + "."
-                        # Accorcia contexts
-                        simplified_item['contexts'] = [
-                            ctx[:300] + "." for ctx in item['contexts'][:3]]
-                        simplified_data.append(simplified_item)
-
-                    test_dataset = Dataset.from_list(simplified_data)
-                    continue
-                elif attempt == max_retries - 1:
-                    return {
-                        'success': False,
-                        'error': error_msg[:150],
-                        'attempts': attempt + 1
-                    }
-                else:
-                    print(f"    ⚠️ Error: {error_msg[:50]}..., retry...")
-                    time.sleep(1)  # Breve pausa tra tentativi
-                    continue
-
-        return {
-            'success': False,
-            'error': "Max retries exceeded",
-            'attempts': max_retries
-        }
-
-    def test_individual_metrics_enhanced(self):
+    def test_individual_metrics_enhanced(self, test_mode=False):
         """Versione migliorata del test delle metriche"""
-        print("\n🧪 TEST METRICHE INDIVIDUALI AVANZATO:")
-        print("=" * 50)
-
-        # LLM e embeddings ultra-compatibili
-        test_llm = self.create_ultra_compatible_llm()
-        test_embeddings = self.create_robust_embeddings()
-
-        # Dataset di test molto robusto
-        test_dataset = self.create_test_dataset_complete()
-        test_dataset = self.validate_and_fix_dataset(test_dataset)
-
-        if not test_dataset:
-            print("❌ Impossibile creare dataset valido")
+        if self.metrics_tester is not None:
+            working_metrics, failed_metrics = self.metrics_tester.test_individual_metrics_enhanced(test_mode)
+            # Cache dei risultati
+            self.working_metrics_cache = working_metrics
+            return working_metrics, failed_metrics
+        else:
+            print("⚠️ MetricsTester non disponibile")
             return {}, {}
 
-        # Lista completa di metriche con configurazioni specifiche
-        metrics_to_test = [
-            ("faithfulness", faithfulness, "Fedeltà al contesto"),
-            ("answer_relevancy", answer_relevancy, "Rilevanza risposta"),
-            ("context_precision", context_precision, "Precisione contesto"),
-            ("context_recall", context_recall, "Richiamo contesto"),
-        ]
-
-        # Aggiungi metriche opzionali con controlli specifici
-        if ANSWER_CORRECTNESS_AVAILABLE:
-            metrics_to_test.append(
-                ("answer_correctness", answer_correctness, "Correttezza"))
-        if ANSWER_SIMILARITY_AVAILABLE:
-            metrics_to_test.append(
-                ("answer_similarity", answer_similarity, "Similarità"))
-        if CONTEXT_ENTITY_RECALL_AVAILABLE:
-            metrics_to_test.append(
-                ("context_entity_recall", context_entity_recall, "Entity Recall"))
-        if COHERENCE_AVAILABLE:
-            metrics_to_test.append(("coherence", coherence, "Coerenza"))
-        if FLUENCY_AVAILABLE:
-            metrics_to_test.append(("fluency", fluency, "Fluidità"))
-        if CONCISENESS_AVAILABLE:
-            metrics_to_test.append(("conciseness", conciseness, "Concisione"))
-
-        working_metrics = {}
-        failed_metrics = {}
-
-        for metric_name, metric_obj, description in metrics_to_test:
-            print(f"\n🎯 Testing {metric_name} ({description})...")
-
-            result = self.test_metric_with_retries(
-                metric_name, metric_obj, test_dataset, test_llm, test_embeddings
-            )
-
-            if result['success']:
-                working_metrics[metric_name] = {
-                    'metric': metric_obj,
-                    'score': result['score'],
-                    'time': result['time'],
-                    'key': result['key'],
-                    'attempts': result['attempts']
-                }
-                status = "🟢" if result['score'] > 0.7 else "✅" if result['score'] > 0.4 else "⚠️"
-                print(
-                    f"  {status} {metric_name}: {result['score']:.4f} ({result['time']:.1f}s, {result['attempts']} attempts)")
-            else:
-                failed_metrics[metric_name] = result['error']
-                print(f"  ❌ {metric_name}: {result['error'][:80]}...")
-
-        # Cache dei risultati
-        self.working_metrics_cache = working_metrics
-
-        # Riassunto migliorato
-        print(f"\n📊 RIASSUNTO TEST AVANZATO:")
-        print(
-            f"✅ Metriche funzionanti: {len(working_metrics)}/{len(metrics_to_test)}")
-
-        if working_metrics:
-            for name, info in working_metrics.items():
-                print(f"  🎯 {name}: {info['score']:.4f} (key: {info['key']})")
-
-        if failed_metrics:
-            print(f"\n❌ Metriche fallite: {len(failed_metrics)}")
-            for name, error in failed_metrics.items():
-                print(f"  💥 {name}: {error[:60]}...")
-
-        return working_metrics, failed_metrics
-
-    def normalize_score(self, score, metric_name):
-        """Normalizza i punteggi tra 0 e 1 basandosi sul tipo di metrica"""
-        if score is None or np.isnan(score):
-            return 0.0
-
-        # La maggior parte delle metriche RAGAS sono già tra 0 e 1
-        # Ma alcune potrebbero avere range diversi
-        if metric_name in ['response_length', 'context_count', 'query_length']:
-            # Per metriche custom di lunghezza, normalizza usando scaling logaritmico
-            if score <= 0:
-                return 0.0
-            # Normalizzazione logaritmica per lunghezze
-            if metric_name == 'response_length':
-                # Normalizza la lunghezza della risposta (0-2000 caratteri)
-                normalized = min(1.0, score / 2000.0)
-            elif metric_name == 'context_count':
-                # Normalizza il numero di contesti (0-10 contesti)
-                normalized = min(1.0, score / 10.0)
-            elif metric_name == 'query_length':
-                # Normalizza la lunghezza della query (0-500 caratteri)
-                normalized = min(1.0, score / 500.0)
-            else:
-                normalized = min(1.0, np.log10(score + 1) / 3.0)
-            return max(0.0, normalized)
-        elif metric_name in ['faithfulness', 'answer_relevancy', 'context_precision', 'context_recall',
-                             'answer_correctness', 'answer_similarity', 'context_entity_recall',
-                             'coherence', 'fluency', 'conciseness']:
-            # Metriche RAGAS sono già 0-1, ma assicuriamoci
-            return max(0.0, min(1.0, float(score)))
-        else:
-            # Per altre metriche custom, usa normalizzazione generica
-            if score < 0:
-                return 0.0
-            elif score > 1:
-                # Se > 1, normalizza dividendo per il valore stesso (scala relativa)
-                return min(1.0, score / max(10.0, score))
-            else:
-                return float(score)
-
-    def evaluate_all_working_metrics(self, query, answer, contexts, isTest=False):
-        """Valuta metriche funzionanti con normalizzazione automatica"""
-        print("\n🚀 VALUTAZIONE CON METRICHE FUNZIONANTI (NORMALIZZATE):")
+    def evaluate_all_working_metrics(self, query, answer, contexts, test_mode=False):
+        """Valuta metriche funzionanti con accesso diretto ai valori
+        
+        Args:
+            query: Query di ricerca
+            answer: Risposta generata
+            contexts: Contesti recuperati
+            test_mode: Se True, ottimizza per ottenere working_metrics_cache velocemente
+        """
+        print("\n🚀 VALUTAZIONE CON METRICHE FUNZIONANTI:")
         print("=" * 60)
 
         # Prepara il dataset PRIMA di testare le metriche
@@ -482,528 +201,247 @@ class RAGEvaluator:
         print(f"  Query: {query[:50]}...")
         print(f"  Answer: {answer[:50]}...")
         print(f"  Contexts: {len(contexts_list)} items")
-        print(f"  Modalità Test: {isTest}")
+        print(f"  Test Mode: {test_mode}")
 
-        # SEMPRE calcola le metriche custom PRIMA
+        # SEMPRE calcola le metriche custom PRIMA - non dipendono da RAGAS
         print("\n🔧 Calcolando metriche custom...")
-        custom_results = self.calculate_custom_metrics(
-            query, answer, contexts_list)
-
-        # Normalizza metriche custom
-        normalized_custom = {}
-        for metric_name, score in custom_results.items():
-            if isinstance(score, (int, float)):
-                original_score = score
-                normalized_score = self.normalize_score(score, metric_name)
-                normalized_custom[metric_name] = normalized_score
-                print(
-                    f"  📊 {metric_name}: {original_score} → {normalized_score:.4f} (normalizzato)")
-            else:
-                normalized_custom[metric_name] = score
-                print(f"  📊 {metric_name}: {score} (non numerico)")
-
-        print(
-            f"📊 Custom results normalizzati: {len(normalized_custom)} metriche")
+        if CUSTOM_METRICS_AVAILABLE and CustomMetrics is not None:
+            custom_results = CustomMetrics.calculate_custom_metrics(query, answer, contexts_list)
+        else:
+            print("⚠️ CustomMetrics non disponibile, usando fallback")
+            custom_results = self._calculate_simple_custom_metrics(query, answer, contexts_list)
+        print(f"📊 Custom results ottenuti: {len(custom_results)} metriche")
 
         # Inizializza risultati RAGAS vuoti
         ragas_results = {}
 
-        if isTest:
-            # MODALITÀ TEST: Come prima - testa e cachea
+        # Gestione test_mode per ottimizzazione
+        if test_mode:
+            print("🧪 TEST MODE attivo - ottengo working_metrics_cache...")
             if not self.working_metrics_cache:
-                print("🔍 MODALITÀ TEST - Testing metriche RAGAS...")
                 working_metrics, failed_metrics = self.test_individual_metrics_enhanced()
+                self.working_metrics_cache = working_metrics
+                print(f"✅ Cache popolata con {len(working_metrics)} metriche funzionanti")
+            else:
+                print(f"✅ Cache già presente con {len(self.working_metrics_cache)} metriche")
+            working_metrics = self.working_metrics_cache
+        else:
+            # Modalità normale - esegui test solo se necessario
+            if not self.working_metrics_cache:
+                print("🔍 Prima esecuzione - testing metriche RAGAS...")
+                working_metrics, failed_metrics = self.test_individual_metrics_enhanced(test_mode)
 
                 if not working_metrics:
                     print("❌ Nessuna metrica RAGAS funzionante trovata!")
-                    print("✅ Ma abbiamo comunque le metriche custom normalizzate!")
+                    print("✅ Ma abbiamo comunque le metriche custom!")
                 else:
                     self.working_metrics_cache = working_metrics
-                    print(
-                        f"✅ {len(working_metrics)} metriche RAGAS funzionanti trovate")
+                    print(f"✅ {len(working_metrics)} metriche RAGAS funzionanti trovate")
             else:
                 working_metrics = self.working_metrics_cache
-                print(
-                    f"✅ Utilizzando {len(working_metrics)} metriche RAGAS dalla cache")
+                print(f"✅ Utilizzando {len(working_metrics)} metriche RAGAS dalla cache")
 
-            # Valuta con cache esistente
-            if self.working_metrics_cache and len(self.working_metrics_cache) > 0:
-                raw_ragas = self._evaluate_cached_metrics(
-                    query, answer, contexts_list)
-                # Normalizza risultati RAGAS
-                print("\n🔧 Normalizzando metriche RAGAS...")
-                for metric_name, score in raw_ragas.items():
-                    original_score = score
-                    normalized_score = self.normalize_score(score, metric_name)
-                    ragas_results[metric_name] = normalized_score
-                    print(
-                        f"  🎯 {metric_name}: {original_score:.4f} → {normalized_score:.4f} (normalizzato)")
+        # Valuta metriche RAGAS solo se abbiamo metriche funzionanti
+        if self.working_metrics_cache and len(self.working_metrics_cache) > 0:
+            print("\n📊 Valutando metriche RAGAS...")
+
+            # Crea dataset per RAGAS
+            dataset_data = [{
+                'question': query,
+                'answer': answer,
+                'contexts': contexts_list[:5],
+                'ground_truth': answer
+            }]
+
+            try:
+                dataset = Dataset.from_list(dataset_data)
+                dataset = self.validate_and_fix_dataset(dataset)
+
+                if dataset:
+                    eval_llm = self.create_ultra_compatible_llm()
+                    eval_embeddings = self.create_robust_embeddings()
+
+                    for metric_name, metric_info in self.working_metrics_cache.items():
+                        print(f"📊 Valutando {metric_name}...")
+
+                        try:
+                            start_time = time.time()
+
+                            result = evaluate(
+                                dataset=dataset,
+                                metrics=[metric_info['metric']],
+                                llm=eval_llm,
+                                embeddings=eval_embeddings,
+                                raise_exceptions=False
+                            )
+
+                            elapsed = time.time() - start_time
+
+                            if result.scores and len(result.scores) > 0:
+                                raw_output = result.scores[0]
+                                print(f"  Raw Output: {raw_output}")  # DEBUG
+
+                                score_key = metric_info.get('key', metric_name)
+                                if score_key in raw_output:
+                                    score = raw_output[score_key]
+                                    
+                                    # Esclusione automatica di score zero o NaN
+                                    if np.isnan(score):
+                                        print(f"  ⚠️ {metric_name}: Score NaN - ESCLUSO dal computo finale")
+                                        continue
+                                    elif score == 0:
+                                        print(f"  ⚠️ {metric_name}: Score zero - ESCLUSO dal computo finale")
+                                        continue
+                                    else:
+                                        ragas_results[metric_name] = score
+                                        status = self.get_status_emoji(score)
+                                        print(f"  {status} {metric_name}: {score:.4f} ({elapsed:.1f}s) - INCLUSO")
+                                else:
+                                    print(f"  ⚠️ {metric_name}: Chiave '{score_key}' non trovata - ESCLUSO")
+                            else:
+                                print(f"  ❌ {metric_name}: Nessun risultato - ESCLUSO")
+
+                        except Exception as e:
+                            print(f"  💥 {metric_name}: Errore - {str(e)[:50]}... - ESCLUSO")
+                            # Rimuovi traceback per non intasare l'output
+                else:
+                    print("❌ Dataset RAGAS non valido")
+            except Exception as e:
+                print(f"❌ Errore nel setup RAGAS: {e}")
         else:
-            # MODALITÀ PRODUCTION: Valuta tutte le metriche e filtra automaticamente
-            print("🎯 MODALITÀ PRODUCTION - Valutazione e filtro automatico...")
-            raw_ragas = self._evaluate_and_filter_metrics(
-                query, answer, contexts_list)
-            # Normalizza risultati RAGAS
-            print("\n🔧 Normalizzando metriche RAGAS...")
-            for metric_name, score in raw_ragas.items():
-                original_score = score
-                normalized_score = self.normalize_score(score, metric_name)
-                ragas_results[metric_name] = normalized_score
-                print(
-                    f"  🎯 {metric_name}: {original_score:.4f} → {normalized_score:.4f} (normalizzato)")
+            print("⚠️ Nessuna metrica RAGAS da valutare, usando solo custom metrics")
 
         # Statistiche finali
         total_ragas = len(ragas_results)
-        total_custom = len(normalized_custom)
+        total_custom = len(custom_results)
 
-        print(f"\n📈 RISULTATI FINALI NORMALIZZATI:")
+        print(f"\n📈 RISULTATI FINALI:")
         print(f"✅ RAGAS metriche valutate: {total_ragas}")
         print(f"✅ Custom metriche calcolate: {total_custom}")
         print(f"📊 Totale metriche: {total_ragas + total_custom}")
 
+        # DEBUG finale
+        print(f"\n🔍 DEBUG FINALE:")
+        print(f"  ragas_results: {ragas_results}")
+        print(f"  custom_results: {custom_results}")
+
         return {
             'ragas': ragas_results,
-            'custom': normalized_custom
+            'custom': custom_results
         }
 
-    def get_comprehensive_results_string(self, results):
-        """Genera una stringa completa con tutti i risultati di valutazione normalizzati"""
-
-        if not results or (not results.get('ragas') and not results.get('custom')):
-            return "❌ Nessun risultato disponibile per la formattazione"
-
-        output = []
-        output.append("=" * 80)
-        output.append(
-            "📊 REPORT COMPLETO VALUTAZIONE RAG (PUNTEGGI NORMALIZZATI 0-1)")
-        output.append("=" * 80)
-
-        # Sezione RAGAS
-        ragas_results = results.get('ragas', {})
-        if ragas_results:
-            output.append("\n🔍 METRICHE RAGAS (NORMALIZZATE):")
-            output.append("-" * 40)
-
-            ragas_scores = []
-            for metric_name, score in ragas_results.items():
-                status = self.get_status_emoji(score)
-                output.append(
-                    f"  {status} {metric_name.capitalize()}: {score:.4f}")
-                ragas_scores.append(score)
-
-            if ragas_scores:
-                ragas_avg = np.mean(ragas_scores)
-                ragas_std = np.std(ragas_scores)
-                ragas_min = min(ragas_scores)
-                ragas_max = max(ragas_scores)
-
-                output.append(f"\n📈 STATISTICHE RAGAS:")
-                output.append(f"  🎯 Media: {ragas_avg:.4f}")
-                output.append(f"  📊 Deviazione std: {ragas_std:.4f}")
-                output.append(f"  ⬇️ Minimo: {ragas_min:.4f}")
-                output.append(f"  ⬆️ Massimo: {ragas_max:.4f}")
-                output.append(f"  📋 Totale metriche: {len(ragas_scores)}")
+    def calculate_custom_metrics(self, query, answer, contexts):
+        """Calcola metriche custom affidabili"""
+        if CUSTOM_METRICS_AVAILABLE and CustomMetrics is not None:
+            return CustomMetrics.calculate_custom_metrics(query, answer, contexts)
         else:
-            output.append("\n🔍 METRICHE RAGAS:")
-            output.append("-" * 40)
-            output.append("  ⚠️ Nessuna metrica RAGAS disponibile")
+            return self._calculate_simple_custom_metrics(query, answer, contexts)
 
-        # Sezione Custom
-        custom_results = results.get('custom', {})
-        if custom_results:
-            output.append("\n🛠️ METRICHE CUSTOM (NORMALIZZATE):")
-            output.append("-" * 40)
+    def display_comprehensive_results(self, ragas_results, custom_results):
+        """Visualizza risultati con debug esteso"""
+        if DISPLAY_HELPER_AVAILABLE and DisplayHelper is not None:
+            DisplayHelper.display_comprehensive_results(ragas_results, custom_results)
+        else:
+            self._simple_display_results(ragas_results, custom_results)
 
-            custom_scores = []
-            for metric_name, score in custom_results.items():
-                if isinstance(score, (int, float)):
-                    status = self.get_status_emoji(score)
-                    output.append(
-                        f"  {status} {metric_name.replace('_', ' ').title()}: {score:.4f}")
-                    custom_scores.append(score)
+    def evaluate_complete(self, query, answer, contexts, test_mode=False):
+        """Metodo di compatibilità per valutazione completa"""
+        return self.evaluate_all_working_metrics(query, answer, contexts, test_mode)
+
+    def test_custom_metrics_only(self, query, answer, contexts):
+        """Test veloce solo delle metriche custom"""
+        print("\n🧪 TEST SOLO METRICHE CUSTOM:")
+        print("=" * 40)
+
+        # Prepara contexts
+        if isinstance(contexts, list) and all(isinstance(ctx, str) for ctx in contexts):
+            contexts_list = contexts
+        else:
+            contexts_list = []
+            for ctx in contexts:
+                if hasattr(ctx, 'page_content'):
+                    contexts_list.append(ctx.page_content)
+                elif isinstance(ctx, str):
+                    contexts_list.append(ctx)
                 else:
-                    output.append(
-                        f"  📊 {metric_name.replace('_', ' ').title()}: {score}")
+                    contexts_list.append(str(ctx))
 
-            if custom_scores:
-                custom_avg = np.mean(custom_scores)
-                custom_std = np.std(custom_scores)
-                custom_min = min(custom_scores)
-                custom_max = max(custom_scores)
-
-                output.append(f"\n📈 STATISTICHE CUSTOM:")
-                output.append(f"  🎯 Media: {custom_avg:.4f}")
-                output.append(f"  📊 Deviazione std: {custom_std:.4f}")
-                output.append(f"  ⬇️ Minimo: {custom_min:.4f}")
-                output.append(f"  ⬆️ Massimo: {custom_max:.4f}")
-                output.append(f"  📋 Totale metriche: {len(custom_scores)}")
+        if CUSTOM_METRICS_AVAILABLE and CustomMetrics is not None:
+            custom_results = CustomMetrics.calculate_custom_metrics(query, answer, contexts_list)
         else:
-            output.append("\n🛠️ METRICHE CUSTOM:")
-            output.append("-" * 40)
-            output.append("  ⚠️ Nessuna metrica custom disponibile")
+            custom_results = self._calculate_simple_custom_metrics(query, answer, contexts_list)
 
-        # Sezione riassunto globale
-        all_scores = []
-        ragas_scores = [score for score in ragas_results.values(
-        ) if isinstance(score, (int, float))]
-        custom_scores = [score for score in custom_results.values(
-        ) if isinstance(score, (int, float))]
+        return {'ragas': {}, 'custom': custom_results}
 
-        all_scores.extend(ragas_scores)
-        all_scores.extend(custom_scores)
-
-        if all_scores:
-            overall_avg = np.mean(all_scores)
-            overall_std = np.std(all_scores)
-            overall_min = min(all_scores)
-            overall_max = max(all_scores)
-
-            output.append("\n🌟 RIASSUNTO GLOBALE (NORMALIZZATO):")
-            output.append("-" * 40)
-            output.append(f"  🎯 Media generale: {overall_avg:.4f}")
-            output.append(f"  📊 Deviazione std generale: {overall_std:.4f}")
-            output.append(f"  ⬇️ Punteggio minimo: {overall_min:.4f}")
-            output.append(f"  ⬆️ Punteggio massimo: {overall_max:.4f}")
-            output.append(f"  📋 Totale metriche valutate: {len(all_scores)}")
-
-            # Interpretazione qualitativa
-            if overall_avg >= 0.8:
-                interpretation = "🟢 ECCELLENTE - Sistema RAG molto performante"
-            elif overall_avg >= 0.6:
-                interpretation = "✅ BUONO - Sistema RAG ben funzionante"
-            elif overall_avg >= 0.4:
-                interpretation = "⚠️ DISCRETO - Sistema RAG con margini di miglioramento"
-            else:
-                interpretation = "❌ SCARSO - Sistema RAG necessita ottimizzazioni"
-
-            output.append(f"  🏆 Valutazione: {interpretation}")
-
-            # Distribuzione dei punteggi
-            excellent_count = sum(1 for score in all_scores if score >= 0.8)
-            good_count = sum(1 for score in all_scores if 0.6 <= score < 0.8)
-            fair_count = sum(1 for score in all_scores if 0.4 <= score < 0.6)
-            poor_count = sum(1 for score in all_scores if score < 0.4)
-
-            output.append(f"\n📊 DISTRIBUZIONE PUNTEGGI:")
-            output.append(
-                f"  🟢 Eccellenti (≥0.8): {excellent_count}/{len(all_scores)} ({excellent_count/len(all_scores)*100:.1f}%)")
-            output.append(
-                f"  ✅ Buoni (0.6-0.8): {good_count}/{len(all_scores)} ({good_count/len(all_scores)*100:.1f}%)")
-            output.append(
-                f"  ⚠️ Discreti (0.4-0.6): {fair_count}/{len(all_scores)} ({fair_count/len(all_scores)*100:.1f}%)")
-            output.append(
-                f"  ❌ Scarsi (<0.4): {poor_count}/{len(all_scores)} ({poor_count/len(all_scores)*100:.1f}%)")
-
-        output.append("\n" + "=" * 80)
-        output.append("🔚 FINE REPORT")
-        output.append("=" * 80)
-
-        return "\n".join(output)
-
-    def get_comprehensive_results_dict(self, results):
-        """Genera un dizionario strutturato con tutti i risultati di valutazione normalizzati per l'API"""
-
-        if not results or (not results.get('ragas') and not results.get('custom')):
-            return {
-                "status": "error",
-                "message": "Nessun risultato disponibile",
-                "ragas_metrics": {},
-                "custom_metrics": {},
-                "statistics": {}
-            }
-
-        # Prepara metriche RAGAS (già normalizzate)
-        ragas_results = results.get('ragas', {})
-        ragas_scores = [score for score in ragas_results.values(
-        ) if isinstance(score, (int, float))]
-
-        # Prepara metriche Custom (già normalizzate)
-        custom_results = results.get('custom', {})
-        custom_scores = [score for score in custom_results.values(
-        ) if isinstance(score, (int, float))]
-
-        # Calcola statistiche globali
-        all_scores = ragas_scores + custom_scores
-
-        statistics = {}
-        if all_scores:
-            statistics = {
-                "overall_average": float(np.mean(all_scores)),
-                "overall_std": float(np.std(all_scores)),
-                "overall_min": float(min(all_scores)),
-                "overall_max": float(max(all_scores)),
-                "total_metrics": len(all_scores),
-                "ragas_count": len(ragas_scores),
-                "custom_count": len(custom_scores),
-                "normalized": True  # Indica che i punteggi sono normalizzati
-            }
-
-            # Interpretazione qualitativa
-            avg = statistics["overall_average"]
-            if avg >= 0.8:
-                statistics["quality_assessment"] = "excellent"
-                statistics["quality_message"] = "Sistema RAG molto performante"
-            elif avg >= 0.6:
-                statistics["quality_assessment"] = "good"
-                statistics["quality_message"] = "Sistema RAG ben funzionante"
-            elif avg >= 0.4:
-                statistics["quality_assessment"] = "fair"
-                statistics["quality_message"] = "Sistema RAG con margini di miglioramento"
-            else:
-                statistics["quality_assessment"] = "poor"
-                statistics["quality_message"] = "Sistema RAG necessita ottimizzazioni"
-
-            # Distribuzione punteggi
-            excellent_count = sum(1 for score in all_scores if score >= 0.8)
-            good_count = sum(1 for score in all_scores if 0.6 <= score < 0.8)
-            fair_count = sum(1 for score in all_scores if 0.4 <= score < 0.6)
-            poor_count = sum(1 for score in all_scores if score < 0.4)
-
-            statistics["score_distribution"] = {
-                "excellent": {"count": excellent_count, "percentage": round(excellent_count/len(all_scores)*100, 1)},
-                "good": {"count": good_count, "percentage": round(good_count/len(all_scores)*100, 1)},
-                "fair": {"count": fair_count, "percentage": round(fair_count/len(all_scores)*100, 1)},
-                "poor": {"count": poor_count, "percentage": round(poor_count/len(all_scores)*100, 1)}
-            }
-
-        # Statistiche specifiche RAGAS
-        ragas_stats = {}
-        if ragas_scores:
-            ragas_stats = {
-                "average": float(np.mean(ragas_scores)),
-                "std": float(np.std(ragas_scores)),
-                "min": float(min(ragas_scores)),
-                "max": float(max(ragas_scores)),
-                "count": len(ragas_scores)
-            }
-
-        # Statistiche specifiche Custom
-        custom_stats = {}
-        if custom_scores:
-            custom_stats = {
-                "average": float(np.mean(custom_scores)),
-                "std": float(np.std(custom_scores)),
-                "min": float(min(custom_scores)),
-                "max": float(max(custom_scores)),
-                "count": len(custom_scores)
-            }
-
-        return {
-            "status": "success",
-            "normalized": True,
-            "ragas_metrics": {
-                "scores": {k: float(v) if isinstance(v, (int, float)) else v for k, v in ragas_results.items()},
-                "statistics": ragas_stats
-            },
-            "custom_metrics": {
-                "scores": {k: float(v) if isinstance(v, (int, float)) else v for k, v in custom_results.items()},
-                "statistics": custom_stats
-            },
-            "overall_statistics": statistics,
-            "summary": {
-                "total_metrics_evaluated": len(all_scores),
-                "ragas_metrics_count": len(ragas_scores),
-                "custom_metrics_count": len(custom_scores),
-                "evaluation_successful": len(all_scores) > 0,
-                "all_scores_normalized": True
-            }
-        }
-
-    def calculate_custom_metrics(self, query, answer, contexts_list):
-        """Placeholder per metriche custom - implementare secondo necessità"""
-        # Questo è un placeholder - dovresti implementare le tue metriche custom qui
-        return {
-            'response_length': len(answer),
-            'context_count': len(contexts_list),
-            'query_length': len(query)
-        }
-
-    def _evaluate_cached_metrics(self, query, answer, contexts_list):
-        """Valuta usando le metriche in cache (modalità test)"""
-        ragas_results = {}
-
-        print("\n📊 Valutando metriche RAGAS dalla cache...")
-
-        # Crea dataset per RAGAS
-        dataset_data = [{
-            'question': query,
-            'answer': answer,
-            'contexts': contexts_list[:5],
-            'ground_truth': answer
-        }]
-
+    def _calculate_simple_custom_metrics(self, query, answer, contexts):
+        """Calcolo semplificato delle metriche custom senza dipendenze esterne"""
+        if not query or not answer or not contexts:
+            return {}
+        
+        # Calcoli base senza numpy
+        query_words = set(query.lower().split())
+        answer_words = set(answer.lower().split())
+        
+        # Context coverage semplice
+        combined_context = " ".join(str(ctx) for ctx in contexts)
+        context_words = set(combined_context.lower().split())
+        
+        custom_results = {}
+        
         try:
-            dataset = Dataset.from_list(dataset_data)
-            dataset = self.validate_and_fix_dataset(dataset)
+            # Jaccard Similarity
+            if query_words and answer_words:
+                intersection = len(query_words.intersection(answer_words))
+                union = len(query_words.union(answer_words))
+                custom_results['jaccard_similarity'] = round(intersection / union if union > 0 else 0, 4)
+            
+            # Context Coverage
+            if answer_words and context_words:
+                answer_in_context = len(answer_words.intersection(context_words))
+                custom_results['context_coverage'] = round(answer_in_context / len(answer_words) if answer_words else 0, 4)
+            
+            # Answer Length Score
+            answer_length = len(answer.split())
+            custom_results['answer_length_score'] = round(min(answer_length / 150, 1.0), 4)
+            
+        except Exception as e:
+            print(f"⚠️ Errore nel calcolo metriche fallback: {e}")
+        
+        return custom_results
 
-            if dataset:
-                eval_llm = self.create_ultra_compatible_llm()
-                eval_embeddings = self.create_robust_embeddings()
-
-                for metric_name, metric_info in self.working_metrics_cache.items():
-                    print(f"📊 Valutando {metric_name}...")
-
-                    try:
-                        start_time = time.time()
-
-                        result = evaluate(
-                            dataset=dataset,
-                            metrics=[metric_info['metric']],
-                            llm=eval_llm,
-                            embeddings=eval_embeddings,
-                            raise_exceptions=False
-                        )
-
-                        elapsed = time.time() - start_time
-
-                        if result.scores and len(result.scores) > 0:
-                            raw_output = result.scores[0]
-                            score_key = metric_info.get('key', metric_name)
-                            if score_key in raw_output:
-                                score = raw_output[score_key]
-                                if not np.isnan(score):
-                                    ragas_results[metric_name] = score
-                                    status = self.get_status_emoji(score)
-                                    print(
-                                        f"  {status} {metric_name}: {score:.4f} ({elapsed:.1f}s)")
-                                else:
-                                    print(f"  ⚠️ {metric_name}: Score NaN")
-                            else:
-                                print(
-                                    f"  ⚠️ {metric_name}: Chiave '{score_key}' non trovata")
-                        else:
-                            print(f"  ❌ {metric_name}: Nessun risultato")
-
-                    except Exception as e:
-                        print(f"  💥 {metric_name}: Errore - {str(e)[:50]}...")
+    def _simple_display_results(self, ragas_results, custom_results):
+        """Visualizzazione semplificata dei risultati"""
+        print("\n" + "="*60)
+        print("📊 RISULTATI VALUTAZIONE RAG")
+        print("="*60)
+        
+        if ragas_results:
+            print("\n🎯 RAGAS Metrics:")
+            for metric, value in ragas_results.items():
+                status = self.get_status_emoji(value)
+                print(f"  {status} {metric:20}: {value:.4f}")
+        
+        if custom_results:
+            print("\n🔧 Custom Metrics:")
+            for metric, value in custom_results.items():
+                status = self.get_status_emoji(value)
+                print(f"  {status} {metric:20}: {value:.4f}")
+        
+        # Statistiche semplici
+        all_scores = list(ragas_results.values()) + list(custom_results.values())
+        if all_scores:
+            avg_score = sum(all_scores) / len(all_scores)
+            print(f"\n📈 Score medio: {avg_score:.4f}")
+            
+            if avg_score >= 0.8:
+                rating = "🏆 ECCELLENTE"
+            elif avg_score >= 0.6:
+                rating = "✅ BUONO"
+            elif avg_score >= 0.4:
+                rating = "⚠️ DISCRETO"
             else:
-                print("❌ Dataset RAGAS non valido")
-        except Exception as e:
-            print(f"❌ Errore nel setup RAGAS: {e}")
-
-        return ragas_results
-
-    def _evaluate_and_filter_metrics(self, query, answer, contexts_list):
-        """Valuta tutte le metriche e filtra automaticamente quelle valide (modalità production)"""
-        ragas_results = {}
-
-        print("\n🎯 Valutando e filtrando metriche RAGAS automaticamente...")
-
-        # Lista di tutte le metriche disponibili
-        all_metrics = [
-            ("faithfulness", faithfulness, "Fedeltà al contesto"),
-            ("answer_relevancy", answer_relevancy, "Rilevanza risposta"),
-            ("context_precision", context_precision, "Precisione contesto"),
-            ("context_recall", context_recall, "Richiamo contesto"),
-        ]
-
-        # Aggiungi metriche opzionali
-        if ANSWER_CORRECTNESS_AVAILABLE:
-            all_metrics.append(
-                ("answer_correctness", answer_correctness, "Correttezza"))
-        if ANSWER_SIMILARITY_AVAILABLE:
-            all_metrics.append(
-                ("answer_similarity", answer_similarity, "Similarità"))
-        if CONTEXT_ENTITY_RECALL_AVAILABLE:
-            all_metrics.append(
-                ("context_entity_recall", context_entity_recall, "Entity Recall"))
-        if COHERENCE_AVAILABLE:
-            all_metrics.append(("coherence", coherence, "Coerenza"))
-        if FLUENCY_AVAILABLE:
-            all_metrics.append(("fluency", fluency, "Fluidità"))
-        if CONCISENESS_AVAILABLE:
-            all_metrics.append(("conciseness", conciseness, "Concisione"))
-
-        # Crea dataset per RAGAS
-        dataset_data = [{
-            'question': query,
-            'answer': answer,
-            'contexts': contexts_list[:5],
-            'ground_truth': answer
-        }]
-
-        try:
-            dataset = Dataset.from_list(dataset_data)
-            dataset = self.validate_and_fix_dataset(dataset)
-
-            if not dataset:
-                print("❌ Dataset RAGAS non valido")
-                return ragas_results
-
-            eval_llm = self.create_ultra_compatible_llm()
-            eval_embeddings = self.create_robust_embeddings()
-
-            valid_metrics = 0
-            failed_metrics = 0
-
-            for metric_name, metric_obj, description in all_metrics:
-                print(f"🔍 Testando {metric_name} ({description})...")
-
-                try:
-                    start_time = time.time()
-
-                    result = evaluate(
-                        dataset=dataset,
-                        metrics=[metric_obj],
-                        llm=eval_llm,
-                        embeddings=eval_embeddings,
-                        raise_exceptions=False
-                    )
-
-                    elapsed = time.time() - start_time
-
-                    if result.scores and len(result.scores) > 0:
-                        raw_output = result.scores[0]
-
-                        # Cerca la chiave del punteggio
-                        possible_keys = [
-                            metric_name,
-                            str(metric_obj),
-                            metric_obj.__class__.__name__.lower(),
-                            metric_obj.__class__.__name__,
-                            f"{metric_name}_score",
-                            "score",
-                            "value"
-                        ]
-
-                        score = None
-                        score_key = None
-
-                        for key in possible_keys:
-                            if key in raw_output:
-                                potential_score = raw_output[key]
-                                if not np.isnan(potential_score) and potential_score > 0:
-                                    score = potential_score
-                                    score_key = key
-                                    break
-
-                        if score is not None:
-                            ragas_results[metric_name] = score
-                            status = self.get_status_emoji(score)
-                            print(
-                                f"  ✅ {status} {metric_name}: {score:.4f} ({elapsed:.1f}s)")
-                            valid_metrics += 1
-                        else:
-                            print(
-                                f"  ❌ {metric_name}: Score <= 0 o NaN - FILTRATO")
-                            failed_metrics += 1
-                    else:
-                        print(
-                            f"  ❌ {metric_name}: Nessun risultato - FILTRATO")
-                        failed_metrics += 1
-
-                except Exception as e:
-                    print(
-                        f"  💥 {metric_name}: Errore - {str(e)[:50]}... - FILTRATO")
-                    failed_metrics += 1
-
-            print(f"\n📊 RISULTATI FILTRO AUTOMATICO:")
-            print(f"  ✅ Metriche valide (score > 0): {valid_metrics}")
-            print(f"  ❌ Metriche filtrate: {failed_metrics}")
-            print(
-                f"  📈 Tasso successo: {valid_metrics/(valid_metrics+failed_metrics)*100:.1f}%")
-
-        except Exception as e:
-            print(f"❌ Errore generale nel filtro automatico: {e}")
-
-        return ragas_results
+                rating = "❌ NECESSITA MIGLIORAMENTI"
+            
+            print(f"🎖️ Rating: {rating}")
+        
+        print("="*60)

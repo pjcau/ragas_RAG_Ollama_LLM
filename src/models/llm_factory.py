@@ -1,28 +1,63 @@
+# Factory per LLM e embeddings con import condizionali
+try:
+    from langchain_ollama import ChatOllama
+    from langchain_ollama.embeddings import OllamaEmbeddings
+    OLLAMA_AVAILABLE = True
+except ImportError:
+    OLLAMA_AVAILABLE = False
+    ChatOllama = None
+    OllamaEmbeddings = None
+
+try:
+    from langchain_openai import ChatOpenAI
+    from langchain_openai import OpenAIEmbeddings
+    OPENAI_AVAILABLE = True
+except ImportError:
+    OPENAI_AVAILABLE = False
+    ChatOpenAI = None
+    OpenAIEmbeddings = None
+
+from ..config.settings import OPENAI_API_KEY, DEFAULT_LLM_MODEL, DEFAULT_EMBEDDING_MODEL, LLM_CONFIG
+
+
 class LLMFactory:
-    """Factory class for creating and configuring language models (LLMs) used in the evaluation process."""
-
+    """Factory per la creazione di LLM e embeddings"""
+    
     @staticmethod
-    def create_ultra_compatible_llm(model_name="llama3.2", temperature=0.1, num_predict=512, num_ctx=8192, num_thread=2, repeat_penalty=1.05, top_k=20, top_p=0.9, timeout=60):
-        """Creates an ultra-compatible LLM for RAGAS."""
-        return ChatOllama(
-            model=model_name,
-            temperature=temperature,
-            num_predict=num_predict,
-            num_ctx=num_ctx,
-            num_thread=num_thread,
-            repeat_penalty=repeat_penalty,
-            top_k=top_k,
-            top_p=top_p,
-            format="json",
-            timeout=timeout,
-        )
-
+    def create_ultra_compatible_llm():
+        """Crea un LLM ultra-compatibile con RAGAS"""
+        if OPENAI_AVAILABLE and OPENAI_API_KEY != "..":
+            return ChatOpenAI(model="gpt-4o", api_key=OPENAI_API_KEY)
+        elif OLLAMA_AVAILABLE:
+            return ChatOllama(
+                model=DEFAULT_LLM_MODEL,
+                **LLM_CONFIG
+            )
+        else:
+            raise ImportError("Nessun LLM disponibile. Installa langchain-ollama o langchain-openai")
+    
     @staticmethod
-    def create_robust_embeddings(model_name="nomic-embed-text", num_thread=2, num_ctx=2048, timeout=30):
-        """Creates robust embeddings for RAGAS."""
-        return OllamaEmbeddings(
-            model=model_name,
-            num_thread=num_thread,
-            num_ctx=num_ctx,
-            timeout=timeout,
-        )
+    def create_openai_llm():
+        """Crea un LLM OpenAI"""
+        if not OPENAI_AVAILABLE:
+            raise ImportError("langchain-openai non è installato")
+        return ChatOpenAI(model="gpt-4o", api_key=OPENAI_API_KEY)
+    
+    @staticmethod
+    def create_robust_embeddings():
+        """Embeddings più robusti"""
+        if OPENAI_AVAILABLE and OPENAI_API_KEY != "..":
+            return OpenAIEmbeddings(api_key=OPENAI_API_KEY)
+        elif OLLAMA_AVAILABLE:
+            return OllamaEmbeddings(
+                model=DEFAULT_EMBEDDING_MODEL
+            )
+        else:
+            raise ImportError("Nessun embedding disponibile. Installa langchain-ollama o langchain-openai")
+    
+    @staticmethod
+    def create_openai_embeddings():
+        """Embeddings OpenAI"""
+        if not OPENAI_AVAILABLE:
+            raise ImportError("langchain-openai non è installato")
+        return OpenAIEmbeddings(api_key=OPENAI_API_KEY)
