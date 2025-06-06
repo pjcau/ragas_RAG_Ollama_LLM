@@ -499,7 +499,7 @@ class RAGEvaluator:
     def _create_basic_ragas_metrics(self):
         """Crea un set base di metriche RAGAS per valutazione diretta"""
         try:
-            print("🔧 Creazione metriche RAGAS di base...")
+            print("🔧 Creazione metriche RAGAS complete (base + opzionali)...")
             
             # Import delle metriche principali
             from ragas.metrics import (
@@ -532,7 +532,43 @@ class RAGEvaluator:
                 }
             }
             
-            print(f"✅ Create {len(basic_metrics)} metriche di base")
+            # Aggiungi metriche opzionali se disponibili
+            optional_metrics = [
+                ('answer_correctness', 'Correttezza della risposta'),
+                ('answer_similarity', 'Similarità della risposta'),
+                ('context_entity_recall', 'Richiamo entità del contesto'),
+                ('context_relevancy', 'Rilevanza del contesto'),
+                ('coherence', 'Coerenza della risposta'),
+                ('fluency', 'Fluidità della risposta'),
+                ('conciseness', 'Concisione della risposta'),
+                ('summarization_score', 'Score di riassunto'),
+                ('aspect_critique', 'Critica per aspetti'),
+                ('maliciousness', 'Rilevamento malizia'),
+                ('harmfulness', 'Rilevamento dannosità')
+            ]
+            
+            for metric_name, description in optional_metrics:
+                try:
+                    # Import dinamico delle metriche opzionali
+                    exec(f"from ragas.metrics import {metric_name}")
+                    metric_obj = eval(metric_name)
+                    
+                    if metric_obj is not None:
+                        basic_metrics[metric_name] = {
+                            'metric': metric_obj,
+                            'key': metric_name,
+                            'description': description
+                        }
+                        print(f"  ✅ {metric_name}: aggiunta")
+                    else:
+                        print(f"  ⚠️ {metric_name}: non disponibile")
+                        
+                except ImportError:
+                    print(f"  ⚠️ {metric_name}: non disponibile in questa versione RAGAS")
+                except Exception as e:
+                    print(f"  ❌ {metric_name}: errore - {str(e)[:30]}")
+
+            print(f"✅ Caricate {len(basic_metrics)} metriche RAGAS totali")
             return basic_metrics
             
         except ImportError as e:

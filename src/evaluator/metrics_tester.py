@@ -308,3 +308,114 @@ class MetricsTester:
                 print(f"  💥 {name}: {error[:60]}...")
         
         return working_metrics, failed_metrics
+    
+    def get_available_metrics_quick(self):
+        """Ottiene tutte le metriche RAGAS disponibili senza test approfonditi"""
+        print("🔍 Caricamento veloce metriche RAGAS disponibili...")
+        
+        if not RAGAS_AVAILABLE:
+            print("❌ RAGAS non disponibile")
+            return {}
+        
+        available_metrics = {}
+        
+        # Lista completa di metriche da controllare
+        metrics_to_check = [
+            # Metriche principali sempre disponibili
+            ("faithfulness", faithfulness, "Fedeltà al contesto"),
+            ("answer_relevancy", answer_relevancy, "Rilevanza della risposta"),
+            ("context_precision", context_precision, "Precisione del contesto"),
+            ("context_recall", context_recall, "Richiamo del contesto"),
+        ]
+        
+        # Metriche opzionali con controlli di disponibilità
+        if ANSWER_CORRECTNESS_AVAILABLE:
+            try:
+                from ragas.metrics import answer_correctness
+                metrics_to_check.append(("answer_correctness", answer_correctness, "Correttezza della risposta"))
+            except ImportError:
+                pass
+        
+        if ANSWER_SIMILARITY_AVAILABLE:
+            try:
+                from ragas.metrics import answer_similarity
+                metrics_to_check.append(("answer_similarity", answer_similarity, "Similarità della risposta"))
+            except ImportError:
+                pass
+        
+        if CONTEXT_ENTITY_RECALL_AVAILABLE:
+            try:
+                from ragas.metrics import context_entity_recall
+                metrics_to_check.append(("context_entity_recall", context_entity_recall, "Richiamo entità del contesto"))
+            except ImportError:
+                pass
+        
+        if COHERENCE_AVAILABLE:
+            try:
+                from ragas.metrics import coherence
+                metrics_to_check.append(("coherence", coherence, "Coerenza della risposta"))
+            except ImportError:
+                pass
+        
+        if FLUENCY_AVAILABLE:
+            try:
+                from ragas.metrics import fluency
+                metrics_to_check.append(("fluency", fluency, "Fluidità della risposta"))
+            except ImportError:
+                pass
+        
+        if CONCISENESS_AVAILABLE:
+            try:
+                from ragas.metrics import conciseness
+                metrics_to_check.append(("conciseness", conciseness, "Concisione della risposta"))
+            except ImportError:
+                pass
+        
+        # Metriche aggiuntive se disponibili
+        try:
+            from ragas.metrics import context_relevancy
+            metrics_to_check.append(("context_relevancy", context_relevancy, "Rilevanza del contesto"))
+        except ImportError:
+            pass
+        
+        try:
+            from ragas.metrics import summarization_score
+            metrics_to_check.append(("summarization_score", summarization_score, "Score di riassunto"))
+        except ImportError:
+            pass
+        
+        try:
+            from ragas.metrics import aspect_critique
+            metrics_to_check.append(("aspect_critique", aspect_critique, "Critica per aspetti"))
+        except ImportError:
+            pass
+        
+        try:
+            from ragas.metrics import maliciousness
+            metrics_to_check.append(("maliciousness", maliciousness, "Rilevamento malizia"))
+        except ImportError:
+            pass
+        
+        try:
+            from ragas.metrics import harmfulness
+            metrics_to_check.append(("harmfulness", harmfulness, "Rilevamento dannosità"))
+        except ImportError:
+            pass
+        
+        # Verifica disponibilità di ogni metrica
+        for metric_name, metric_obj, description in metrics_to_check:
+            try:
+                if metric_obj is not None:
+                    available_metrics[metric_name] = {
+                        'metric': metric_obj,
+                        'key': metric_name,
+                        'description': description
+                    }
+                    print(f"  ✅ {metric_name}: {description}")
+                else:
+                    print(f"  ⚠️ {metric_name}: oggetto nullo")
+            except Exception as e:
+                print(f"  ❌ {metric_name}: errore - {str(e)[:50]}")
+        
+        print(f"📋 Caricate {len(available_metrics)} metriche RAGAS disponibili")
+        return available_metrics
