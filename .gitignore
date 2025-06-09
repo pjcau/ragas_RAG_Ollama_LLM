@@ -175,3 +175,4 @@ cython_debug/
 src/__pycache__/__init__.cpython-311.pyc
 src/evaluator/__pycache__/__init__.cpython-311.pyc
 src/evaluator/__pycache__/rag_evaluator.cpython-311.pyc
+.DS_Store
