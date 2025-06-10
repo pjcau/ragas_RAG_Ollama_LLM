@@ -8,32 +8,31 @@ try:
 except ImportError:
     DATASETS_AVAILABLE = False
     # Mock Dataset class
+
     class MockDataset:
         def __init__(self, data):
             self.data = data
-        
+
         @classmethod
         def from_list(cls, data_list):
             return cls(data_list)
-        
+
         def __getitem__(self, index):
             return self.data[index]
-        
+
         def __len__(self):
             return len(self.data)
-        
+
         def __iter__(self):
             return iter(self.data)
-    
+
     Dataset = MockDataset
 
 
 class DatasetValidator:
-    """Classe per la validazione e creazione di dataset"""
-    
+
     @staticmethod
     def create_test_dataset_complete():
-        """Crea un dataset di test completo e robusto per testare le metriche"""
         test_data = [{
             'question': 'What is machine learning and how does it work?',
             'answer': 'Machine learning is a subset of artificial intelligence that enables computers to learn and make decisions from data without being explicitly programmed. It works by using algorithms to identify patterns in data, training models on these patterns, and then using the trained models to make predictions or decisions on new, unseen data. The process typically involves data collection, preprocessing, feature selection, model training, validation, and deployment.',
@@ -50,7 +49,6 @@ class DatasetValidator:
 
     @staticmethod
     def validate_dataset(dataset):
-        """Valida la struttura e il contenuto di un dataset"""
         if not dataset or len(dataset) == 0:
             return False
 
@@ -60,38 +58,37 @@ class DatasetValidator:
             # Controlla campi obbligatori
             for field in required_fields:
                 if field not in item:
-                    print(f"❌ Campo mancante: {field}")
+                    print(f"❌ Missing field: {field}")
                     return False
 
                 if not item[field]:
-                    print(f"❌ Campo vuoto: {field}")
+                    print(f"❌ Empty field: {field}")
                     return False
 
             # Valida specificamente i contexts
             if not isinstance(item['contexts'], list):
-                print(f"❌ Contexts deve essere una lista")
+                print(f"❌ Contexts must be a list")
                 return False
 
             if len(item['contexts']) == 0:
-                print(f"❌ Lista contexts vuota")
+                print(f"❌ Empty contexts list")
                 return False
 
             # Controlla che ogni context sia una stringa non vuota
             for i, ctx in enumerate(item['contexts']):
                 if not isinstance(ctx, str) or len(ctx.strip()) < DATASET_CONFIG['min_context_length']:
-                    print(f"❌ Context {i} non valido o troppo corto")
+                    print(f"❌ Context {i} invalid or too short")
                     return False
 
         return True
 
     @staticmethod
     def validate_and_fix_dataset(dataset):
-        """Valida e corregge automaticamente il dataset"""
-        print("\n🔧 VALIDAZIONE E CORREZIONE DATASET:")
+        print("\n🔧 DATASET VALIDATION AND CORRECTION:")
         print("=" * 45)
 
         if not dataset or len(dataset) == 0:
-            print("❌ Dataset vuoto!")
+            print("❌ Empty dataset!")
             return None
 
         sample = dataset[0]
@@ -105,12 +102,12 @@ class DatasetValidator:
 
         # Fix answer
         if 'answer' not in sample or not sample['answer'].strip():
-            print("❌ Answer mancante o vuoto!")
+            print("❌ Missing or empty answer!")
             return None
 
         # Fix contexts
         if 'contexts' not in sample or not sample['contexts']:
-            print("❌ Contexts mancanti!")
+            print("❌ Missing contexts!")
             return None
 
         # Pulisci e migliora contexts
@@ -124,7 +121,7 @@ class DatasetValidator:
                 clean_contexts.append(ctx)
 
         if len(clean_contexts) == 0:
-            print("❌ Nessun context valido dopo pulizia!")
+            print("❌ No valid contexts after cleaning!")
             return None
 
         sample['contexts'] = clean_contexts[:DATASET_CONFIG['max_contexts']]
@@ -140,7 +137,7 @@ class DatasetValidator:
             fixed = True
 
         if fixed:
-            print("✅ Dataset corretto automaticamente")
+            print("✅ Dataset automatically corrected")
 
         # Ricrea dataset con dati corretti
         corrected_dataset = Dataset.from_list([sample])

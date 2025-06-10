@@ -1,6 +1,5 @@
 class DatasetCreator:
-    """Classe per la creazione di dataset per test e valutazione."""
-    
+
     @staticmethod
     def create_sample_dataset(num_samples=10):
         """Crea un dataset di esempio per la valutazione."""
@@ -21,10 +20,10 @@ class DatasetCreator:
 
     @staticmethod
     def create_custom_dataset(questions, answers, contexts):
-        """Crea un dataset personalizzato basato su domande, risposte e contesti forniti."""
         if len(questions) != len(answers) or len(questions) != len(contexts):
-            raise ValueError("Le liste di domande, risposte e contesti devono avere la stessa lunghezza.")
-        
+            raise ValueError(
+                "The lists of questions, answers, and contexts must have the same length.")
+
         dataset = []
         for i in range(len(questions)):
             sample = {
@@ -38,14 +37,12 @@ class DatasetCreator:
 
     @staticmethod
     def save_dataset_to_file(dataset, file_path):
-        """Salva il dataset in un file JSON."""
         import json
         with open(file_path, 'w') as f:
             json.dump(dataset, f, ensure_ascii=False, indent=4)
 
     @staticmethod
     def load_dataset_from_file(file_path):
-        """Carica un dataset da un file JSON."""
         import json
         with open(file_path, 'r') as f:
             return json.load(f)

@@ -1,4 +1,4 @@
-# Factory per LLM e embeddings con import condizionali
+# Factory for LLM and embeddings with conditional imports
 try:
     from langchain_ollama import ChatOllama
     from langchain_ollama.embeddings import OllamaEmbeddings
@@ -21,11 +21,11 @@ from ..config.settings import OPENAI_API_KEY, DEFAULT_LLM_MODEL, DEFAULT_EMBEDDI
 
 
 class LLMFactory:
-    """Factory per la creazione di LLM e embeddings"""
-    
+    """Factory for creating LLMs and embeddings"""
+
     @staticmethod
     def create_ultra_compatible_llm():
-        """Crea un LLM ultra-compatibile con RAGAS"""
+        """Creates an ultra-compatible LLM with RAGAS"""
         if OPENAI_AVAILABLE and OPENAI_API_KEY != "..":
             return ChatOpenAI(model="gpt-4o", api_key=OPENAI_API_KEY)
         elif OLLAMA_AVAILABLE:
@@ -34,18 +34,19 @@ class LLMFactory:
                 **LLM_CONFIG
             )
         else:
-            raise ImportError("Nessun LLM disponibile. Installa langchain-ollama o langchain-openai")
-    
+            raise ImportError(
+                "No LLM available. Install langchain-ollama or langchain-openai")
+
     @staticmethod
     def create_openai_llm():
-        """Crea un LLM OpenAI"""
+        """Creates an OpenAI LLM"""
         if not OPENAI_AVAILABLE:
-            raise ImportError("langchain-openai non è installato")
+            raise ImportError("langchain-openai is not installed")
         return ChatOpenAI(model="gpt-4o", api_key=OPENAI_API_KEY)
-    
+
     @staticmethod
     def create_robust_embeddings():
-        """Embeddings più robusti"""
+        """More robust embeddings"""
         if OPENAI_AVAILABLE and OPENAI_API_KEY != "..":
             return OpenAIEmbeddings(api_key=OPENAI_API_KEY)
         elif OLLAMA_AVAILABLE:
@@ -53,11 +54,12 @@ class LLMFactory:
                 model=DEFAULT_EMBEDDING_MODEL
             )
         else:
-            raise ImportError("Nessun embedding disponibile. Installa langchain-ollama o langchain-openai")
-    
+            raise ImportError(
+                "No embeddings available. Install langchain-ollama or langchain-openai")
+
     @staticmethod
     def create_openai_embeddings():
-        """Embeddings OpenAI"""
+        """OpenAI embeddings"""
         if not OPENAI_AVAILABLE:
-            raise ImportError("langchain-openai non è installato")
+            raise ImportError("langchain-openai is not installed")
         return OpenAIEmbeddings(api_key=OPENAI_API_KEY)

@@ -1,18 +1,18 @@
-# Utility per la visualizzazione dei risultati
+# Utility for displaying results
 
-# Import condizionali
+# Conditional imports
 try:
     import numpy as np
     NUMPY_AVAILABLE = True
 except ImportError:
     NUMPY_AVAILABLE = False
-    # Mock per numpy functions
+    # Mock for numpy functions
 
     class MockNumpy:
         @staticmethod
         def isnan(value):
             try:
-                return value != value  # NaN check senza numpy
+                return value != value  # NaN check without numpy
             except:
                 return False
 
@@ -43,28 +43,28 @@ except ImportError:
 
 
 class DisplayHelper:
-    """Classe per la visualizzazione dei risultati"""
+    """Class for displaying results"""
 
     @staticmethod
     def get_status_emoji(score):
-        """Restituisce emoji basato sul punteggio"""
+        """Returns emoji based on score"""
         if score >= 0.8:
-            return "🟢"  # Eccellente
+            return "🟢"  # Excellent
         elif score >= 0.6:
-            return "✅"  # Buono
+            return "✅"  # Good
         elif score >= 0.4:
-            return "⚠️"  # Discreto
+            return "⚠️"  # Fair
         else:
-            return "❌"  # Scarso
+            return "❌"  # Poor
 
     @staticmethod
     def display_comprehensive_results(ragas_results, custom_results):
-        """Visualizza risultati con debug esteso"""
+        """Displays results with extended debug"""
         print("\n" + "="*80)
-        print("📊 RISULTATI VALUTAZIONE RAG COMPLETA")
+        print("📊 COMPREHENSIVE RAG EVALUATION RESULTS")
         print("="*80)
 
-        # Categorizza metriche RAGAS
+        # Categorize RAGAS metrics
         metric_categories = {
             "🎯 Core RAG Metrics": ["faithfulness", "answer_relevancy", "context_precision", "context_recall"],
             "📝 Answer Quality": ["answer_correctness", "answer_similarity"],
@@ -74,11 +74,11 @@ class DisplayHelper:
             "🔬 Specialized": ["summarization_score", "aspect_critique"]
         }
 
-        # Mostra metriche RAGAS per categoria
+        # Show RAGAS metrics by category
         ragas_scores = []
         zero_scores = []
 
-        print(f"\n📊 SEZIONE RAGAS METRICS:")
+        print(f"\n📊 RAGAS METRICS SECTION:")
         if ragas_results and len(ragas_results) > 0:
             for category_name, metrics in metric_categories.items():
                 category_metrics = {k: v for k,
@@ -95,13 +95,13 @@ class DisplayHelper:
                         else:
                             print(f"  🔶 {metric:20}: NaN")
         else:
-            print("  ❌ Nessuna metrica RAGAS disponibile")
+            print("  ❌ No RAGAS metrics available")
 
-        # Mostra metriche custom
-        print(f"\n🔧 SEZIONE CUSTOM METRICS:")
+        # Show custom metrics
+        print(f"\n🔧 CUSTOM METRICS SECTION:")
         custom_scores = []
         if custom_results and isinstance(custom_results, dict) and len(custom_results) > 0:
-            print(f"✅ Mostrando {len(custom_results)} metriche custom:")
+            print(f"✅ Showing {len(custom_results)} custom metrics:")
             for metric, value in custom_results.items():
                 try:
                     if isinstance(value, (int, float)) and not np.isnan(value):
@@ -111,14 +111,14 @@ class DisplayHelper:
                     else:
                         print(f"  ⚠️ {metric:25}: {value} (invalid)")
                 except Exception as e:
-                    print(f"  ❌ Errore processando {metric}: {e}")
+                    print(f"  ❌ Error processing {metric}: {e}")
         else:
-            print("  ❌ Nessuna metrica custom disponibile")
+            print("  ❌ No custom metrics available")
 
-        # Statistiche globali
+        # Global statistics
         all_scores = ragas_scores + custom_scores
 
-        print(f"\n📈 STATISTICHE GLOBALI:")
+        print(f"\n📈 GLOBAL STATISTICS:")
         print(f"  📊 RAGAS scores: {len(ragas_scores)}")
         print(f"  🔧 Custom scores: {len(custom_scores)}")
         print(f"  📋 Total scores: {len(all_scores)}")
@@ -129,43 +129,43 @@ class DisplayHelper:
             max_score = np.max(all_scores)
             min_score = np.min(all_scores)
 
-            print(f"  📊 Score medio:      {avg_score:.4f}")
-            print(f"  🎯 Score mediano:    {median_score:.4f}")
-            print(f"  🏆 Score massimo:    {max_score:.4f}")
-            print(f"  ⚠️ Score minimo:     {min_score:.4f}")
+            print(f"  📊 Average score:    {avg_score:.4f}")
+            print(f"  🎯 Median score:     {median_score:.4f}")
+            print(f"  🏆 Maximum score:    {max_score:.4f}")
+            print(f"  ⚠️ Minimum score:    {min_score:.4f}")
 
-            # Rating globale
+            # Global rating
             if avg_score >= 0.8:
-                rating = "🏆 ECCELLENTE"
+                rating = "🏆 EXCELLENT"
             elif avg_score >= 0.6:
-                rating = "✅ BUONO"
+                rating = "✅ GOOD"
             elif avg_score >= 0.4:
-                rating = "⚠️ DISCRETO"
+                rating = "⚠️ FAIR"
             else:
-                rating = "❌ NECESSITA MIGLIORAMENTI"
+                rating = "❌ NEEDS IMPROVEMENT"
 
-            print(f"  🎖️ Rating globale:   {rating}")
+            print(f"  🎖️ Global rating:    {rating}")
 
-            # Aree di miglioramento
+            # Areas for improvement
             if zero_scores:
-                print(f"\n🔧 AREE DI MIGLIORAMENTO:")
+                print(f"\n🔧 AREAS FOR IMPROVEMENT:")
                 for metric in zero_scores:
                     print(f"  ❌ {metric}")
         else:
-            print("  ❌ Nessun punteggio disponibile per le statistiche")
+            print("  ❌ No scores available for statistics")
 
         print("\n" + "="*80)
 
     @staticmethod
     def format_comprehensive_results(ragas_results, custom_results):
-        """Formatta risultati con debug esteso e restituisce una stringa"""
+        """Formats results with extended debug and returns a string"""
         output = []
 
         output.append("=" * 80)
-        output.append("📊 RISULTATI VALUTAZIONE RAG COMPLETA")
+        output.append("📊 COMPREHENSIVE RAG EVALUATION RESULTS")
         output.append("=" * 80)
 
-        # Categorizza metriche RAGAS
+        # Categorize RAGAS metrics
         metric_categories = {
             "🎯 Core RAG Metrics": ["faithfulness", "answer_relevancy", "context_precision", "context_recall"],
             "📝 Answer Quality": ["answer_correctness", "answer_similarity"],
@@ -175,11 +175,11 @@ class DisplayHelper:
             "🔬 Specialized": ["summarization_score", "aspect_critique"]
         }
 
-        # Mostra metriche RAGAS per categoria
+        # Show RAGAS metrics by category
         ragas_scores = []
         zero_scores = []
 
-        output.append("\n📊 SEZIONE RAGAS METRICS:")
+        output.append("\n📊 RAGAS METRICS SECTION:")
         if ragas_results and len(ragas_results) > 0:
             for category_name, metrics in metric_categories.items():
                 category_metrics = {
@@ -197,14 +197,14 @@ class DisplayHelper:
                         else:
                             output.append(f"  🔶 {metric:20}: NaN")
         else:
-            output.append("  ❌ Nessuna metrica RAGAS disponibile")
+            output.append("  ❌ No RAGAS metrics available")
 
-        # Mostra metriche custom
-        output.append(f"\n🔧 SEZIONE CUSTOM METRICS:")
+        # Show custom metrics
+        output.append(f"\n🔧 CUSTOM METRICS SECTION:")
         custom_scores = []
         if custom_results and isinstance(custom_results, dict) and len(custom_results) > 0:
             output.append(
-                f"✅ Mostrando {len(custom_results)} metriche custom:")
+                f"✅ Showing {len(custom_results)} custom metrics:")
             for metric, value in custom_results.items():
                 try:
                     if isinstance(value, (int, float)) and not np.isnan(value):
@@ -216,14 +216,14 @@ class DisplayHelper:
                         output.append(
                             f"  ⚠️ {metric:25}: {value} (invalid)")
                 except Exception as e:
-                    output.append(f"  ❌ Errore processando {metric}: {e}")
+                    output.append(f"  ❌ Error processing {metric}: {e}")
         else:
-            output.append("  ❌ Nessuna metrica custom disponibile")
+            output.append("  ❌ No custom metrics available")
 
-        # Statistiche globali
+        # Global statistics
         all_scores = ragas_scores + custom_scores
 
-        output.append(f"\n📈 STATISTICHE GLOBALI:")
+        output.append(f"\n📈 GLOBAL STATISTICS:")
         output.append(f"  📊 RAGAS scores: {len(ragas_scores)}")
         output.append(f"  🔧 Custom scores: {len(custom_scores)}")
         output.append(f"  📋 Total scores: {len(all_scores)}")
@@ -234,31 +234,31 @@ class DisplayHelper:
             max_score = np.max(all_scores)
             min_score = np.min(all_scores)
 
-            output.append(f"  📊 Score medio:      {avg_score:.4f}")
-            output.append(f"  🎯 Score mediano:    {median_score:.4f}")
-            output.append(f"  🏆 Score massimo:    {max_score:.4f}")
-            output.append(f"  ⚠️ Score minimo:     {min_score:.4f}")
+            output.append(f"  📊 Average score:    {avg_score:.4f}")
+            output.append(f"  🎯 Median score:     {median_score:.4f}")
+            output.append(f"  🏆 Maximum score:    {max_score:.4f}")
+            output.append(f"  ⚠️ Minimum score:    {min_score:.4f}")
 
-            # Rating globale
+            # Global rating
             if avg_score >= 0.8:
-                rating = "🏆 ECCELLENTE"
+                rating = "🏆 EXCELLENT"
             elif avg_score >= 0.6:
-                rating = "✅ BUONO"
+                rating = "✅ GOOD"
             elif avg_score >= 0.4:
-                rating = "⚠️ DISCRETO"
+                rating = "⚠️ FAIR"
             else:
-                rating = "❌ NECESSITA MIGLIORAMENTI"
+                rating = "❌ NEEDS IMPROVEMENT"
 
-            output.append(f"  🎖️ Rating globale:   {rating}")
+            output.append(f"  🎖️ Global rating:    {rating}")
 
-            # Aree di miglioramento
+            # Areas for improvement
             if zero_scores:
-                output.append(f"\n🔧 AREE DI MIGLIORAMENTO:")
+                output.append(f"\n🔧 AREAS FOR IMPROVEMENT:")
                 for metric in zero_scores:
                     output.append(f"  ❌ {metric}")
         else:
             output.append(
-                "  ❌ Nessun punteggio disponibile per le statistiche")
+                "  ❌ No scores available for statistics")
 
         output.append("\n" + "=" * 80)
 
@@ -266,7 +266,7 @@ class DisplayHelper:
 
     @staticmethod
     def format_comprehensive_results_simple(ragas_results, custom_results):
-        """Versione semplificata che restituisce solo le statistiche principali"""
+        """Simplified version that returns only main statistics"""
         ragas_scores = [v for v in ragas_results.values() if isinstance(
             v, (int, float)) and not np.isnan(v)] if ragas_results else []
         custom_scores = [v for v in custom_results.values() if isinstance(
@@ -274,18 +274,18 @@ class DisplayHelper:
         all_scores = ragas_scores + custom_scores
 
         if not all_scores:
-            return "❌ Nessun punteggio disponibile"
+            return "❌ No scores available"
 
         avg_score = np.mean(all_scores)
 
         # Rating
         if avg_score >= 0.8:
-            rating = "🏆 ECCELLENTE"
+            rating = "🏆 EXCELLENT"
         elif avg_score >= 0.6:
-            rating = "✅ BUONO"
+            rating = "✅ GOOD"
         elif avg_score >= 0.4:
-            rating = "⚠️ DISCRETO"
+            rating = "⚠️ FAIR"
         else:
-            rating = "❌ NECESSITA MIGLIORAMENTI"
+            rating = "❌ NEEDS IMPROVEMENT"
 
         return f"📊 Score: {avg_score:.4f} | {rating} | RAGAS: {len(ragas_scores)} | Custom: {len(custom_scores)}"

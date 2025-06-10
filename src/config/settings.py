@@ -1,7 +1,6 @@
-# Configurazioni centrali per il sistema RAG Evaluator
 
 # OpenAI Configuration
-OPENAI_API_KEY = ".."  # Inserisci qui la tua chiave API OpenAI
+OPENAI_API_KEY = ".."
 
 # LLM Configuration
 DEFAULT_LLM_MODEL = "deepseek-r1"
@@ -29,7 +28,7 @@ DATASET_CONFIG = {
 
 # Custom Metrics Configuration
 CUSTOM_METRICS_CONFIG = {
-    "optimal_length": 150,           # Lunghezza ottimale answer
-    "technical_word_min_length": 6,  # Lunghezza minima per parole "tecniche"
-    "answer_completeness_cap": 200,   # Cap per answer completeness
+    "optimal_length": 150,
+    "technical_word_min_length": 6,
+    "answer_completeness_cap": 200,
 }

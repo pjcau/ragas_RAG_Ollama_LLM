@@ -1,12 +1,12 @@
 import time
 
-# Import condizionali per numpy
+# Conditional imports for numpy
 try:
     import numpy as np
     NUMPY_AVAILABLE = True
 except ImportError:
     NUMPY_AVAILABLE = False
-    # Mock numpy per isnan
+    # Mock numpy for isnan
 
     class MockNumpy:
         @staticmethod
@@ -17,7 +17,7 @@ except ImportError:
                 return False
     np = MockNumpy()
 
-# Import condizionali per datasets
+# Conditional imports for datasets
 try:
     from datasets import Dataset
     DATASETS_AVAILABLE = True
@@ -44,15 +44,15 @@ except ImportError:
 
     Dataset = MockDataset
 
-# RAGAS imports con gestione errori
+# RAGAS imports with error handling
 try:
     from ragas import evaluate
     RAGAS_AVAILABLE = True
 except ImportError as e:
-    print(f"⚠️ RAGAS non disponibile: {e}")
+    print(f"⚠️ RAGAS not available: {e}")
     RAGAS_AVAILABLE = False
 
-# Import dei moduli refactorizzati con gestione errori
+# Import refactored modules with error handling
 try:
     from .metrics_tester import MetricsTester
     METRICS_TESTER_AVAILABLE = True
@@ -90,54 +90,54 @@ except ImportError:
 
 
 class RAGEvaluator:
-    """Classe principale per la valutazione completa di sistemi RAG"""
+    """Main class for complete RAG systems evaluation"""
 
     def __init__(self):
         self.eval_llm = None
         self.eval_embeddings = None
-        self.working_metrics_cache = None  # Cache per metriche funzionanti
+        self.working_metrics_cache = None  # Cache for working metrics
 
-        # Inizializza il metrics_tester solo se disponibile
+        # Initialize metrics_tester only if available
         if METRICS_TESTER_AVAILABLE and MetricsTester is not None:
             self.metrics_tester = MetricsTester()
         else:
-            print("⚠️ MetricsTester non disponibile")
+            print("⚠️ MetricsTester not available")
             self.metrics_tester = None
 
     def create_ultra_compatible_llm(self):
-        """Crea un LLM ultra-compatibile con RAGAS"""
+        """Creates an ultra-compatible LLM with RAGAS"""
         if LLM_FACTORY_AVAILABLE and LLMFactory is not None:
             return LLMFactory.create_ultra_compatible_llm()
         else:
-            raise ImportError("LLMFactory non disponibile")
+            raise ImportError("LLMFactory not available")
 
     def create_robust_embeddings(self):
-        """Embeddings più robusti"""
+        """More robust embeddings"""
         if LLM_FACTORY_AVAILABLE and LLMFactory is not None:
             return LLMFactory.create_robust_embeddings()
         else:
-            raise ImportError("LLMFactory non disponibile")
+            raise ImportError("LLMFactory not available")
 
     def create_test_dataset_complete(self):
-        """Crea un dataset di test completo e robusto per testare le metriche"""
+        """Creates a complete and robust test dataset for testing metrics"""
         if DATASET_VALIDATOR_AVAILABLE and DatasetValidator is not None:
             return DatasetValidator.create_test_dataset_complete()
         else:
-            raise ImportError("DatasetValidator non disponibile")
+            raise ImportError("DatasetValidator not available")
 
     def validate_dataset(self, dataset):
-        """Valida la struttura e il contenuto di un dataset"""
+        """Validates the structure and content of a dataset"""
         if DATASET_VALIDATOR_AVAILABLE and DatasetValidator is not None:
             return DatasetValidator.validate_dataset(dataset)
         else:
             return False
 
     def get_status_emoji(self, score):
-        """Restituisce emoji basato sul punteggio"""
+        """Returns emoji based on score"""
         if DISPLAY_HELPER_AVAILABLE and DisplayHelper is not None:
             return DisplayHelper.get_status_emoji(score)
         else:
-            # Fallback semplice
+            # Simple fallback
             if score >= 0.8:
                 return "🟢"
             elif score >= 0.6:
