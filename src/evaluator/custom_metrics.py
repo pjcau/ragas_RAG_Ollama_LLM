@@ -99,5 +99,7 @@ class CustomMetrics:
                     answer_completeness, 4)
 
         except Exception as e:
+            print(f"Error calculating custom metrics: {e}")
+            return {}
 
         return custom_results
