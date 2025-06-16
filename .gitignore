@@ -172,7 +172,7 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
-src/__pycache__/__init__.cpython-311.pyc
-src/evaluator/__pycache__/__init__.cpython-311.pyc
-src/evaluator/__pycache__/rag_evaluator.cpython-311.pyc
 .DS_Store
+src/__pycache__/__init__.*.pyc
+src/evaluator/__pycache__/__init__.*.pyc
+src/evaluator/__pycache__/rag_evaluator.*.pyc
